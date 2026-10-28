@@ -1,0 +1,65 @@
+
+# Python cache files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# IDE and editor files
+.vscode/
+.idea/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Build and distribution files
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+
+# Test and coverage reports
+.coverage
+htmlcov/
+
+# Generated analysis reports
+reports/
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# Local model files and large model weights
+*.gguf
+*.safetensors
+*.pt
+*.pth
+*.onnx
+
+# Local datasets
+# Keep sample CSV files tracked.
+# Add private or large dataset paths below if needed.
