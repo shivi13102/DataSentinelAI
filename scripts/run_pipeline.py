@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import numpy as np
 import pandas as pd
@@ -63,8 +65,23 @@ def json_safe(value: Any) -> Any:
     return value
 
 
-def run_pipeline(baseline_path: Path, current_path: Path) -> dict[str, Any]:
+def run_pipeline(
+    baseline_path: Path,
+    current_path: Path,
+    *,
+    artifact_dir: Path | None = None,
+    run_id: str | None = None,
+) -> dict[str, Any]:
     """Analyze two datasets and apply DataSentinel's existing protection gate."""
+
+    run_id = run_id or uuid4().hex
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", run_id):
+        raise ValueError("run_id may contain only letters, numbers, '.', '_' and '-'.")
+
+    run_artifact_dir = artifact_dir or REPORTS_DIR / "runs" / run_id
+    run_artifact_dir.mkdir(parents=True, exist_ok=True)
+    decision_path = run_artifact_dir / "jenkins_decision.txt"
+    decision_path.unlink(missing_ok=True)
 
     if not baseline_path.is_file():
         raise FileNotFoundError(f"Baseline CSV not found: {baseline_path}")
@@ -119,15 +136,16 @@ def run_pipeline(baseline_path: Path, current_path: Path) -> dict[str, Any]:
 
     print("\n[4/4] Generating JSON report...")
 
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    report_path = REPORTS_DIR / f"jenkins_analysis_{timestamp}.json"
-    decision_path = REPORTS_DIR / "jenkins_decision.txt"
+    generated_at = datetime.now(timezone.utc)
+    timestamp = generated_at.strftime("%Y%m%dT%H%M%SZ")
+    report_path = run_artifact_dir / (
+        f"jenkins_analysis_{timestamp}_{run_id}_{uuid4().hex[:8]}.json"
+    )
 
     report = {
         "report_type": "jenkins_pipeline",
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "run_id": run_id,
+        "generated_at": generated_at.isoformat(),
         "workflow_status": "success",
         "overall_status": analysis_results.get("overall_status", "unknown"),
         "dataset_metadata": {
@@ -158,18 +176,31 @@ def run_pipeline(baseline_path: Path, current_path: Path) -> dict[str, Any]:
 
     safe_report = json_safe(report)
 
-    report_path.write_text(
-        json.dumps(safe_report, indent=2, ensure_ascii=False, allow_nan=False),
-        encoding="utf-8",
+    report_json = json.dumps(
+        safe_report,
+        indent=2,
+        ensure_ascii=False,
+        allow_nan=False,
     )
+    _write_atomically(report_path, report_json)
+    _write_atomically(decision_path, f"{decision}\n")
 
-    decision_path.write_text(f"{decision}\n", encoding="utf-8")
-
-    print(f"Report saved: {report_path.relative_to(PROJECT_ROOT)}")
-    print(f"Decision saved: {decision_path.relative_to(PROJECT_ROOT)}")
+    print(f"Report saved: {report_path}")
+    print(f"Decision saved: {decision_path}")
     print(f"\nDATASENTINEL_DECISION={decision}")
 
     return safe_report
+
+
+def _write_atomically(path: Path, content: str) -> None:
+    """Write an artifact without exposing a partially written decision."""
+
+    temporary_path = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary_path.write_text(content, encoding="utf-8")
+        temporary_path.replace(path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def main() -> int:
@@ -190,20 +221,37 @@ def main() -> int:
         default=PROJECT_ROOT / "data" / "raw" / "current.csv",
         help="Path to the current CSV to inspect.",
     )
+    parser.add_argument(
+        "--artifact-dir",
+        type=Path,
+        help="Directory for this run's report and decision artifacts.",
+    )
+    parser.add_argument(
+        "--run-id",
+        help="Unique, safe identifier for this execution.",
+    )
 
     args = parser.parse_args()
 
     baseline_path = args.baseline
     current_path = args.current
+    artifact_dir = args.artifact_dir
 
     if not baseline_path.is_absolute():
         baseline_path = PROJECT_ROOT / baseline_path
 
     if not current_path.is_absolute():
         current_path = PROJECT_ROOT / current_path
+    if artifact_dir is not None and not artifact_dir.is_absolute():
+        artifact_dir = PROJECT_ROOT / artifact_dir
 
     try:
-        run_pipeline(baseline_path, current_path)
+        run_pipeline(
+            baseline_path,
+            current_path,
+            artifact_dir=artifact_dir,
+            run_id=args.run_id,
+        )
         return 0
 
     except Exception as exc:

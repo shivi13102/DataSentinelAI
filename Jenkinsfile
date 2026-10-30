@@ -6,14 +6,32 @@ pipeline {
         skipDefaultCheckout(true)
     }
 
-    environment {
-        DATASENTINEL_DECISION = 'UNSET'
+    parameters {
+        choice(
+            name: 'SCENARIO',
+            choices: ['current', 'healthy', 'suspicious', 'critical'],
+            description: 'Dataset pair used for the deterministic protection run.'
+        )
     }
 
     stages {
         stage('Checkout') {
             steps {
                 checkout scm
+            }
+        }
+
+        stage('Prepare Build Artifacts') {
+            steps {
+                script {
+                    def artifactDirectory =
+                        "reports/jenkins/${env.BUILD_NUMBER}"
+                    dir(artifactDirectory) {
+                        // Remove artifacts from a replay of this build so a
+                        // stale ALLOW cannot survive an earlier attempt.
+                        deleteDir()
+                    }
+                }
             }
         }
 
@@ -56,97 +74,163 @@ pipeline {
         stage('Analyze Datasets') {
             steps {
                 script {
+                    if (!(params.SCENARIO in [
+                        'current',
+                        'healthy',
+                        'suspicious',
+                        'critical'
+                    ])) {
+                        error('Unknown DataSentinel scenario.')
+                    }
+
+                    def baseline = 'data/raw/baseline.csv'
+                    def current = 'data/raw/current.csv'
+                    if (params.SCENARIO != 'current') {
+                        baseline = "tests/fixtures/protection/${params.SCENARIO}_baseline.csv"
+                        current = "tests/fixtures/protection/${params.SCENARIO}_current.csv"
+                    }
+
+                    def artifactDirectory =
+                        "reports/jenkins/${env.BUILD_NUMBER}"
+
                     if (isUnix()) {
-                        sh 'python3 scripts/run_pipeline.py'
+                        sh """
+                            set -eu
+                            python3 scripts/run_pipeline.py \\
+                              --baseline '${baseline}' \\
+                              --current '${current}' \\
+                              --artifact-dir '${artifactDirectory}' \\
+                              --run-id '${env.BUILD_NUMBER}'
+                        """
                     } else {
-                        bat 'python scripts\\run_pipeline.py'
+                        bat """
+                            @echo off
+                            python scripts\\run_pipeline.py --baseline "${baseline}" --current "${current}" --artifact-dir "${artifactDirectory}" --run-id "${env.BUILD_NUMBER}"
+                            if errorlevel 1 exit /b 1
+                        """
                     }
                 }
             }
         }
 
-        
         stage('Read Protection Decision') {
             steps {
                 script {
-                    def decisionFile = 'reports/jenkins_decision.txt'
+                    def decisionFile =
+                        "reports/jenkins/${env.BUILD_NUMBER}/jenkins_decision.txt"
 
                     if (!fileExists(decisionFile)) {
                         error(
-                            'Protection decision file was not generated. ' +
-                            'Failing closed.'
+                            'The current build did not generate a protection '
+                            + 'decision artifact. Failing closed.'
                         )
                     }
 
-                    // Read the file into a local variable first.
-                    def decisionText = readFile(
+                    def decision = readFile(
                         file: decisionFile,
                         encoding: 'UTF-8'
                     ).trim()
 
-                    echo "Raw protection decision from file: '${decisionText}'"
-
-                    def validatedDecision = decisionText.toUpperCase()
-
-                    if (!(validatedDecision in [
+                    if (!(decision in [
                         'ALLOW',
                         'REVIEW_REQUIRED',
                         'BLOCK'
                     ])) {
                         error(
-                            'Invalid protection decision: ' +
-                            validatedDecision +
-                            '. Failing closed.'
+                            "Invalid protection decision '${decision}'. "
+                            + 'Failing closed.'
                         )
                     }
 
-                    // Update the environment only after validation.
-                    env.DATASENTINEL_DECISION = validatedDecision
-
-                    echo(
-                        'DataSentinel protection decision: ' +
-                        env.DATASENTINEL_DECISION
-                    )
+                    currentBuild.description =
+                        "DataSentinel protection: ${decision}"
+                    echo "Current build protection decision: ${decision}"
                 }
             }
         }
 
-
         stage('Simulated Downstream Processing') {
             when {
                 expression {
-                    env.DATASENTINEL_DECISION == 'ALLOW'
+                    def decisionFile =
+                        "reports/jenkins/${env.BUILD_NUMBER}/jenkins_decision.txt"
+                    fileExists(decisionFile) &&
+                        readFile(
+                            file: decisionFile,
+                            encoding: 'UTF-8'
+                        ).trim() == 'ALLOW'
                 }
             }
-
             steps {
-                echo 'Protection gate returned ALLOW.'
-                echo 'Simulated downstream processing can proceed.'
-                echo 'No external production system is connected by this demonstration.'
+                script {
+                    // Re-read at the execution boundary; the decision file,
+                    // not an AI response or a prior environment value, is authoritative.
+                    def decisionFile =
+                        "reports/jenkins/${env.BUILD_NUMBER}/jenkins_decision.txt"
+                    if (!fileExists(decisionFile)) {
+                        error('Protection decision disappeared; failing closed.')
+                    }
+                    def decision = readFile(
+                        file: decisionFile,
+                        encoding: 'UTF-8'
+                    ).trim()
+                    if (decision != 'ALLOW') {
+                        error(
+                            'Downstream execution requires an exact ALLOW '
+                            + 'decision from this build.'
+                        )
+                    }
+
+                    echo 'Protection gate returned ALLOW.'
+                    echo 'Simulated downstream processing can proceed.'
+                    echo(
+                        'No external production system is connected by '
+                        + 'this demonstration.'
+                    )
+                }
             }
         }
 
         stage('Enforce Protection Policy') {
             steps {
                 script {
-                    if (env.DATASENTINEL_DECISION == 'BLOCK') {
+                    def decisionFile =
+                        "reports/jenkins/${env.BUILD_NUMBER}/jenkins_decision.txt"
+                    if (!fileExists(decisionFile)) {
+                        error('Protection decision is missing; failing closed.')
+                    }
+                    def decision = readFile(
+                        file: decisionFile,
+                        encoding: 'UTF-8'
+                    ).trim()
+
+                    if (!(decision in [
+                        'ALLOW',
+                        'REVIEW_REQUIRED',
+                        'BLOCK'
+                    ])) {
                         error(
-                            'DataSentinel returned BLOCK. ' +
-                            'Downstream processing is prohibited.'
+                            "Invalid protection decision '${decision}'. "
+                            + 'Failing closed.'
                         )
                     }
 
-                    if (env.DATASENTINEL_DECISION == 'REVIEW_REQUIRED') {
-                        error(
-                            'DataSentinel returned REVIEW_REQUIRED. ' +
-                            'Human approval is required before processing.'
+                    if (decision == 'BLOCK') {
+                        currentBuild.result = 'UNSTABLE'
+                        echo(
+                            'BLOCK: downstream processing was prohibited. '
+                            + 'This is a protection outcome, not an analysis '
+                            + 'failure.'
                         )
+                    } else if (decision == 'REVIEW_REQUIRED') {
+                        currentBuild.result = 'UNSTABLE'
+                        echo(
+                            'REVIEW_REQUIRED: downstream processing remains '
+                            + 'prohibited because no approval workflow exists.'
+                        )
+                    } else {
+                        echo 'ALLOW: protection policy permits processing.'
                     }
-
-                    echo(
-                        'Protection policy passed. ' +
-                        'Downstream processing was permitted.'
-                    )
                 }
             }
         }
@@ -155,7 +239,7 @@ pipeline {
     post {
         always {
             archiveArtifacts(
-                artifacts: 'reports/jenkins_analysis_*.json,reports/jenkins_decision.txt',
+                artifacts: "reports/jenkins/${env.BUILD_NUMBER}/**",
                 allowEmptyArchive: true,
                 fingerprint: true
             )
@@ -165,10 +249,17 @@ pipeline {
             echo 'DataSentinel pipeline completed successfully.'
         }
 
+        unstable {
+            echo(
+                'DataSentinel analysis completed, but the protection policy '
+                + 'prohibited automatic downstream processing.'
+            )
+        }
+
         failure {
             echo(
-                'DataSentinel pipeline failed or the protection policy ' +
-                'prevented processing.'
+                'DataSentinel pipeline failed before a trustworthy '
+                + 'protection outcome could be enforced.'
             )
         }
     }

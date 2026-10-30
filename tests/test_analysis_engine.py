@@ -20,6 +20,7 @@ def test_identical_datasets_are_healthy():
     assert result["overall_status"] == "healthy"
     assert result["total_findings"] == 0
     assert result["severity_counts"] == {
+        "critical": 0,
         "high": 0,
         "medium": 0,
         "low": 0,
@@ -98,6 +99,11 @@ def test_invalid_current_type_is_rejected():
             baseline,
             {"value": [1, 2, 3]},
         )
+
+
+def test_empty_datasets_are_rejected_instead_of_marked_healthy():
+    with pytest.raises(ValueError, match="at least one row"):
+        analyze_datasets(pd.DataFrame({"value": []}), pd.DataFrame({"value": []}))
 
 
 def test_input_datasets_are_not_modified():

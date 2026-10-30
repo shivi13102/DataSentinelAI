@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import re
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -16,11 +18,14 @@ from src.graph.workflow import data_sentinel_workflow
 from src.utils.data_loader import load_csv
 
 
+logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent
 REPORTS_DIR = PROJECT_ROOT / "reports"
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 AI_MODEL = "gemma3:1b"
+MAX_UPLOAD_SIZE_MB = 50
+MAX_UPLOAD_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
 app = FastAPI(
     title="DataSentinel AI API",
@@ -87,13 +92,15 @@ def json_safe(value: Any) -> Any:
 def save_report(report: dict[str, Any]) -> str:
     """Persist an analysis report and return its report ID."""
 
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     report_id = (
         datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         + "_"
-        + uuid4().hex[:8]
+        + uuid4().hex
     )
 
     report_path = REPORTS_DIR / f"analysis_{report_id}.json"
+    temporary_path = REPORTS_DIR / f".{report_id}.tmp"
 
     report_with_id = {
         "report_id": report_id,
@@ -102,10 +109,19 @@ def save_report(report: dict[str, Any]) -> str:
 
     safe_report = json_safe(report_with_id)
 
-    report_path.write_text(
-        json.dumps(safe_report, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    try:
+        temporary_path.write_text(
+            json.dumps(
+                safe_report,
+                indent=2,
+                ensure_ascii=False,
+                allow_nan=False,
+            ),
+            encoding="utf-8",
+        )
+        temporary_path.replace(report_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
     return report_id
 
@@ -136,8 +152,34 @@ async def analyze_datasets(
     through the existing LangGraph workflow.
     """
 
-    baseline_bytes = await baseline_file.read()
-    current_bytes = await current_file.read()
+    for upload in (baseline_file, current_file):
+        if upload.filename and not upload.filename.lower().endswith(".csv"):
+            raise HTTPException(
+                status_code=415,
+                detail="Only CSV uploads are supported.",
+            )
+
+    baseline_bytes = await baseline_file.read(MAX_UPLOAD_BYTES + 1)
+
+    if len(baseline_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"The baseline file exceeds the "
+                f"{MAX_UPLOAD_SIZE_MB} MB upload limit."
+            ),
+        )
+
+    current_bytes = await current_file.read(MAX_UPLOAD_BYTES + 1)
+
+    if len(current_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"The current file exceeds the "
+                f"{MAX_UPLOAD_SIZE_MB} MB upload limit."
+            ),
+        )
 
     if not baseline_bytes:
         raise HTTPException(
@@ -155,10 +197,14 @@ async def analyze_datasets(
         baseline_df = load_csv(BytesIO(baseline_bytes))
         current_df = load_csv(BytesIO(current_bytes))
 
-    except Exception as exc:
+    except (ValueError, TypeError, UnicodeDecodeError) as exc:
+        logger.info("Uploaded CSV failed validation: %s", type(exc).__name__)
         raise HTTPException(
             status_code=400,
-            detail=f"CSV validation failed: {exc}",
+            detail=(
+                "CSV validation failed. Check that the file is a valid, "
+                "UTF-8 CSV with a header row and data rows."
+            ),
         ) from exc
 
     try:
@@ -177,24 +223,28 @@ async def analyze_datasets(
             )
 
     except Exception as exc:
+        logger.error(
+            "Dataset analysis workflow failed (%s).",
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=500,
-            detail=f"Data analysis workflow failed: {exc}",
+            detail="Data analysis workflow failed. No downstream processing was authorized.",
         ) from exc
 
     report["dataset_metadata"] = {
         "baseline": {
-            "filename": Path(
-                baseline_file.filename or "baseline.csv"
-            ).name,
+            "filename": (baseline_file.filename or "baseline.csv")
+            .replace("\\", "/")
+            .rsplit("/", 1)[-1],
             "rows": int(len(baseline_df)),
             "columns": int(len(baseline_df.columns)),
             "size_bytes": len(baseline_bytes),
         },
         "current": {
-            "filename": Path(
-                current_file.filename or "current.csv"
-            ).name,
+            "filename": (current_file.filename or "current.csv")
+            .replace("\\", "/")
+            .rsplit("/", 1)[-1],
             "rows": int(len(current_df)),
             "columns": int(len(current_df.columns)),
             "size_bytes": len(current_bytes),
@@ -277,13 +327,7 @@ def download_report(report_id: str) -> FileResponse:
     """Download a saved JSON report."""
 
     # Prevent path traversal by accepting only generated ID characters.
-    allowed = set(
-        "abcdefghijklmnopqrstuvwxyz"
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "0123456789_-"
-    )
-
-    if not report_id or any(char not in allowed for char in report_id):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", report_id):
         raise HTTPException(
             status_code=400,
             detail="Invalid report ID.",
@@ -291,14 +335,22 @@ def download_report(report_id: str) -> FileResponse:
 
     report_path = REPORTS_DIR / f"analysis_{report_id}.json"
 
-    if not report_path.is_file():
+    reports_root = REPORTS_DIR.resolve()
+    resolved_report_path = report_path.resolve()
+    if not resolved_report_path.is_relative_to(reports_root):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid report ID.",
+        )
+
+    if not resolved_report_path.is_file():
         raise HTTPException(
             status_code=404,
             detail="Report not found.",
         )
 
     return FileResponse(
-        path=report_path,
+        path=resolved_report_path,
         media_type="application/json",
         filename=f"datasentinel_report_{report_id}.json",
     )

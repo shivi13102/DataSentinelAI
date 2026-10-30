@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from typing_extensions import TypedDict
 
@@ -10,6 +11,9 @@ from langgraph.graph import END, START, StateGraph
 from src.analysis_engine import analyze_datasets
 from src.agents.reasoning_agent import explain_findings
 from src.protection_gate import evaluate_pipeline_gate
+
+
+logger = logging.getLogger(__name__)
 
 
 class DataSentinelState(TypedDict, total=False):
@@ -42,8 +46,15 @@ def analyze_data(state: DataSentinelState) -> dict[str, Any]:
         }
 
     except Exception as exc:
+        logger.error(
+            "Deterministic analysis failed (%s).",
+            type(exc).__name__,
+        )
         return {
-            "error": f"Data analysis failed: {exc}",
+            "error": (
+                "Deterministic analysis failed; results are unavailable "
+                f"({type(exc).__name__})."
+            ),
         }
 
 
@@ -52,11 +63,14 @@ def generate_reasoning(state: DataSentinelState) -> dict[str, Any]:
 
     analysis_results = state.get("analysis_results")
 
-    if not analysis_results:
+    if analysis_results is None:
         return {
             "reasoning_results": {
                 "status": "skipped",
-                "error": "AI reasoning skipped because data analysis failed.",
+                "error": (
+                    "AI investigation was skipped because deterministic "
+                    "analysis did not complete."
+                ),
             }
         }
 
@@ -68,10 +82,14 @@ def generate_reasoning(state: DataSentinelState) -> dict[str, Any]:
         }
 
     except Exception as exc:
+        logger.error("AI reasoning failed (%s).", type(exc).__name__)
         return {
             "reasoning_results": {
                 "status": "error",
-                "error": f"AI reasoning failed: {exc}",
+                "error": (
+                    "AI reasoning failed; results are unavailable "
+                    f"({type(exc).__name__})."
+                ),
             }
         }
 
@@ -81,7 +99,7 @@ def protect_pipeline(state: DataSentinelState) -> dict[str, Any]:
 
     analysis_results = state.get("analysis_results")
 
-    if not analysis_results:
+    if analysis_results is None:
         return {
             "protection_results": {
                 "decision": "BLOCK",
@@ -110,7 +128,12 @@ def protect_pipeline(state: DataSentinelState) -> dict[str, Any]:
 
     except Exception as exc:
         # Fail closed: if the gate itself fails, do not allow processing.
+        logger.error("Protection gate failed (%s).", type(exc).__name__)
         return {
+            "error": (
+                "Protection gate failed; downstream processing is blocked "
+                f"({type(exc).__name__})."
+            ),
             "protection_results": {
                 "decision": "BLOCK",
                 "downstream_processing_allowed": False,
@@ -123,7 +146,7 @@ def protect_pipeline(state: DataSentinelState) -> dict[str, Any]:
                     "total": 0,
                 },
                 "reasons": [
-                    f"Protection gate failed: {exc}",
+                    "Protection gate failed; downstream processing is blocked.",
                     "Downstream processing is blocked for safety.",
                 ],
             }
@@ -133,7 +156,13 @@ def protect_pipeline(state: DataSentinelState) -> dict[str, Any]:
 def build_report(state: DataSentinelState) -> dict[str, Any]:
     """Combine analysis, AI reasoning and protection results."""
 
-    analysis_results = state.get("analysis_results", {})
+    raw_analysis_results = state.get("analysis_results")
+    analysis_results = raw_analysis_results
+    if not isinstance(raw_analysis_results, dict):
+        analysis_results = {
+            "overall_status": "error",
+            "findings": [],
+        }
 
     reasoning_results = state.get(
         "reasoning_results",
@@ -156,19 +185,17 @@ def build_report(state: DataSentinelState) -> dict[str, Any]:
         },
     )
 
-    explanation = reasoning_results.get("explanation", {})
-
-    human_review_required = (
-        protection_results.get("human_review_required", True)
-        or explanation.get("human_review_required", False)
-    )
-
     # The protection gate is authoritative.
     # An AI response can never override a BLOCK or REVIEW_REQUIRED decision.
+    analysis_complete = (
+        not state.get("error")
+        and isinstance(raw_analysis_results, dict)
+        and raw_analysis_results.get("overall_status")
+        in {"healthy", "warning", "critical"}
+        and isinstance(raw_analysis_results.get("findings"), list)
+    )
     final_report = {
-        "workflow_status": (
-            "success" if analysis_results else "error"
-        ),
+        "workflow_status": "success" if analysis_complete else "error",
         "overall_status": analysis_results.get(
             "overall_status",
             "error",
@@ -176,7 +203,9 @@ def build_report(state: DataSentinelState) -> dict[str, Any]:
         "analysis": analysis_results,
         "ai_reasoning": reasoning_results,
         "protection": protection_results,
-        "human_review_required": human_review_required,
+        "human_review_required": protection_results.get(
+            "human_review_required", True
+        ),
         "error": state.get("error", ""),
     }
 

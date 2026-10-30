@@ -5,6 +5,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from pandas.api.types import is_bool_dtype, is_numeric_dtype
 from scipy.stats import chi2_contingency
 
 
@@ -51,6 +52,18 @@ def detect_categorical_drift(
     common_columns = sorted(set(baseline.columns) & set(current.columns))
 
     for column in common_columns:
+        baseline_is_numeric = is_numeric_dtype(baseline[column])
+        current_is_numeric = is_numeric_dtype(current[column])
+        baseline_is_boolean = is_bool_dtype(baseline[column])
+        current_is_boolean = is_bool_dtype(current[column])
+        if (
+            baseline_is_numeric
+            and current_is_numeric
+            and not baseline_is_boolean
+            and not current_is_boolean
+        ):
+            continue
+
         baseline_values = baseline[column].dropna().astype(str)
         current_values = current[column].dropna().astype(str)
 

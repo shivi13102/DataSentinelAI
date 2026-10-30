@@ -41,6 +41,19 @@ def analyze_datasets(
     if not isinstance(current, pd.DataFrame):
         raise TypeError("current must be a pandas DataFrame.")
 
+    if baseline.empty or current.empty:
+        raise ValueError(
+            "Baseline and current datasets must each contain at least one row."
+        )
+
+    if len(baseline.columns) == 0 or len(current.columns) == 0:
+        raise ValueError(
+            "Baseline and current datasets must each contain at least one column."
+        )
+
+    if baseline.columns.duplicated().any() or current.columns.duplicated().any():
+        raise ValueError("Dataset column names must be unique.")
+
     findings: list[dict[str, Any]] = []
 
     # Run each detector independently.
@@ -58,19 +71,20 @@ def analyze_datasets(
 
     # Count findings by severity.
     severity_counts = {
+        "critical": 0,
         "high": 0,
         "medium": 0,
         "low": 0,
     }
 
     for finding in findings:
-        severity = finding.get("severity", "low")
+        severity = finding.get("severity")
 
         if severity in severity_counts:
             severity_counts[severity] += 1
 
     # Determine an overall status.
-    if severity_counts["high"] > 0:
+    if severity_counts["critical"] > 0 or severity_counts["high"] > 0:
         overall_status = "critical"
     elif severity_counts["medium"] > 0:
         overall_status = "warning"

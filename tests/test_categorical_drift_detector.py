@@ -157,3 +157,14 @@ def test_numeric_columns_with_too_few_categories_are_skipped():
     findings = detect_categorical_drift(baseline, current)
 
     assert findings == []
+
+
+def test_numeric_measurements_are_not_reported_as_categorical_drift():
+    baseline = pd.DataFrame({"measurement": [value % 10 for value in range(100)]})
+    current = pd.DataFrame(
+        {"measurement": [value * 4 for value in range(100)]}
+    )
+
+    findings = detect_categorical_drift(baseline, current)
+
+    assert findings == []

@@ -1,0 +1,76 @@
+{
+  "format_version": 1,
+  "generator": "scripts/generate_protection_fixtures.py",
+  "scenarios": [
+    {
+      "id": "healthy",
+      "baseline": "healthy_baseline.csv",
+      "current": "healthy_current.csv",
+      "injected_anomalies": [],
+      "expected_finding_types": [],
+      "expected_severities": [],
+      "expected_decision": "ALLOW",
+      "rationale": "Identical balanced data should not trigger any configured detector."
+    },
+    {
+      "id": "suspicious",
+      "baseline": "suspicious_baseline.csv",
+      "current": "suspicious_current.csv",
+      "injected_anomalies": ["missing_value_anomaly"],
+      "expected_finding_types": ["missing_value_anomaly"],
+      "expected_severities": ["medium"],
+      "expected_decision": "REVIEW_REQUIRED",
+      "rationale": "A 20 percentage-point increase in measurement missingness is medium severity under the 10-point threshold."
+    },
+    {
+      "id": "critical",
+      "baseline": "critical_baseline.csv",
+      "current": "critical_current.csv",
+      "injected_anomalies": ["schema_change"],
+      "expected_finding_types": ["schema_change"],
+      "expected_severities": ["high"],
+      "expected_decision": "BLOCK",
+      "rationale": "Removing the measurement column is a high-severity schema change."
+    },
+    {
+      "id": "duplicate",
+      "baseline": "duplicate_baseline.csv",
+      "current": "duplicate_current.csv",
+      "injected_anomalies": ["duplicate_anomaly"],
+      "expected_finding_types": ["duplicate_anomaly"],
+      "expected_severities": ["medium"],
+      "expected_decision": "REVIEW_REQUIRED",
+      "rationale": "Ten appended duplicate rows exceed the 5 percentage-point duplicate-rate threshold but remain below the 20-point high-severity cutoff."
+    },
+    {
+      "id": "numerical_drift",
+      "baseline": "numerical_drift_baseline.csv",
+      "current": "numerical_drift_current.csv",
+      "injected_anomalies": ["distribution_drift"],
+      "expected_finding_types": ["distribution_drift"],
+      "expected_severities": ["high"],
+      "expected_decision": "BLOCK",
+      "rationale": "Multiplying measurement values by four produces a distribution shift with high severity under the configured KS/mean rules."
+    },
+    {
+      "id": "categorical_drift",
+      "baseline": "categorical_drift_baseline.csv",
+      "current": "categorical_drift_current.csv",
+      "injected_anomalies": ["categorical_drift"],
+      "expected_finding_types": ["categorical_drift"],
+      "expected_severities": ["high"],
+      "expected_decision": "BLOCK",
+      "rationale": "Replacing 40 of 100 segment labels creates a large, statistically significant categorical distribution change."
+    },
+    {
+      "id": "multiple",
+      "baseline": "multiple_baseline.csv",
+      "current": "multiple_current.csv",
+      "injected_anomalies": ["missing_value_anomaly", "duplicate_anomaly"],
+      "expected_finding_types": ["missing_value_anomaly", "duplicate_anomaly"],
+      "expected_severities": ["medium", "medium"],
+      "expected_decision": "REVIEW_REQUIRED",
+      "rationale": "The dataset independently injects a 20-point missingness increase and ten duplicate rows; both should be detected at medium severity."
+    }
+  ]
+}

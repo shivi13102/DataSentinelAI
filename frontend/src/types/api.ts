@@ -94,6 +94,7 @@ export interface Finding {
 // ── Analysis ─────────────────────────────────────────────────
 
 export interface SeverityCounts {
+  critical: number;
   high: number;
   medium: number;
   low: number;
@@ -132,6 +133,7 @@ export interface AIReasoning {
   status: 'success' | 'error' | 'skipped';
   model?: string;
   analysis_status?: string;
+  duration_seconds?: number;
   explanation?: AIExplanation;
   error?: string;
 }
@@ -202,4 +204,3 @@ export interface ReportsResponse {
   reports: ReportSummary[];
   total: number;
 }
-

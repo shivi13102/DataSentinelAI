@@ -20,28 +20,16 @@ import { cn, formatBytes } from '../lib/utils';
 
 type AnalysisStage =
   | 'idle'
-  | 'validating'
-  | 'detecting'
-  | 'reasoning'
-  | 'gate'
-  | 'reporting'
+  | 'analyzing'
   | 'done'
   | 'error';
 
 const STAGE_LABELS: Record<AnalysisStage, string> = {
   idle:       '',
-  validating: 'Validating uploaded datasets…',
-  detecting:  'Running statistical detectors…',
-  reasoning:  'Generating AI investigation…',
-  gate:       'Evaluating the protection gate…',
-  reporting:  'Preparing the report…',
+  analyzing:  'Uploading files and waiting for backend analysis…',
   done:       'Analysis complete.',
   error:      'Analysis failed.',
 };
-
-const STAGE_ORDER: AnalysisStage[] = [
-  'validating', 'detecting', 'reasoning', 'gate', 'reporting', 'done',
-];
 
 export function DatasetAnalysis() {
   const { setLatestReport, refreshReports, navigate, toast } = useContext(AppContext);
@@ -103,35 +91,25 @@ export function DatasetAnalysis() {
     if (!baselineFile || !currentFile) return;
     setErrorMsg('');
 
-    // Simulate staged UI feedback while the backend processes
-    // the request. These are UX progress states; the backend
-    // does not emit granular progress events.
-    const stageDelay = [400, 1200, 1200, 400, 300];
-
-    async function advanceStages() {
-      for (let i = 0; i < STAGE_ORDER.length - 1; i++) {
-        setStage(STAGE_ORDER[i]);
-        await delay(stageDelay[i] ?? 400);
-      }
-    }
-
-    const stagePromise = advanceStages();
-
     try {
-      const [report] = await Promise.all([
-        analyzeDatasets(baselineFile, currentFile),
-        stagePromise,
-      ]);
-
-      setStage('reporting');
-      await delay(300);
-      setStage('done');
-
+      setStage('analyzing');
+      const report = await analyzeDatasets(baselineFile, currentFile);
       setLatestReport(report);
       await refreshReports();
+
+      if (report.workflow_status !== 'success') {
+        const message = report.error
+          || 'Analysis did not complete successfully. Downstream processing is blocked.';
+        setStage('error');
+        setErrorMsg(message);
+        toast(message, 'error');
+        navigate('overview');
+        return;
+      }
+
+      setStage('done');
       toast('Analysis complete. Report saved.', 'success');
 
-      await delay(800);
       navigate('overview');
     } catch (err: unknown) {
       setStage('error');
@@ -167,7 +145,7 @@ export function DatasetAnalysis() {
             </p>
             <p>
               Python detectors run first. Gemma generates an AI investigation once analysis completes.
-              Only CSV files are supported. No data leaves your local environment.
+              Only CSV files are supported. With the default local backend, files stay on this machine.
             </p>
           </div>
         </CardBody>
@@ -364,8 +342,6 @@ function UploadPanel({
 // ── Progress indicator ────────────────────────────────────────
 
 function AnalysisProgress({ stage }: { stage: AnalysisStage }) {
-  const activeIdx = STAGE_ORDER.indexOf(stage);
-
   return (
     <Card elevated>
       <CardBody>
@@ -375,34 +351,7 @@ function AnalysisProgress({ stage }: { stage: AnalysisStage }) {
             {STAGE_LABELS[stage]}
           </p>
         </div>
-        <div className="space-y-2">
-          {STAGE_ORDER.slice(0, -1).map((s, i) => {
-            const completed = i < activeIdx;
-            const active = i === activeIdx;
-            return (
-              <div key={s} className="flex items-center gap-3">
-                <div className={cn(
-                  'h-2 w-2 rounded-full shrink-0',
-                  completed ? 'bg-emerald-400' :
-                  active    ? 'bg-cyan-400 animate-pulse' : 'bg-[#223149]',
-                )} />
-                <p className={cn(
-                  'text-xs',
-                  completed ? 'text-emerald-400/70 line-through' :
-                  active    ? 'text-[#E5EDF9]' : 'text-[#8B9BB4]',
-                )}>
-                  {STAGE_LABELS[s]}
-                </p>
-              </div>
-            );
-          })}
-        </div>
       </CardBody>
     </Card>
   );
 }
-
-function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
