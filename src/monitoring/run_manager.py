@@ -135,6 +135,21 @@ class RunManager:
             future = self._executor.submit(self._execute, run_id, target)
             self._futures[run_id] = future
 
+    def discard_queued_run(self, run_id: str) -> bool:
+        """Remove an unsubmitted run when its durable setup cannot complete."""
+
+        with self._lock:
+            record = self._runs.get(run_id)
+            if (
+                record is None
+                or record["status"] != "queued"
+                or run_id in self._futures
+            ):
+                return False
+            self._runs.pop(run_id)
+            self._conditions.pop(run_id, None)
+            return True
+
     def _execute(
         self,
         run_id: str,

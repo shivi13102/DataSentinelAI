@@ -39,6 +39,36 @@ const SCENARIOS = [
   ['multiple', 'Multiple anomalies fixture'],
 ] as const;
 
+const GRAPH_NODES = [
+  { stageId: 'dataset_loading', row: 1, column: 2 },
+  { stageId: 'input_validation', row: 2, column: 2 },
+  { stageId: 'schema_analysis', row: 3, column: 2 },
+  { stageId: 'missing_value_analysis', row: 4, column: 2 },
+  { stageId: 'duplicate_analysis', row: 5, column: 2 },
+  { stageId: 'numerical_drift_analysis', row: 6, column: 2 },
+  { stageId: 'categorical_drift_analysis', row: 7, column: 2 },
+  { stageId: 'findings_aggregation', row: 8, column: 2 },
+  { stageId: 'protection_gate', row: 9, column: 2 },
+  { stageId: 'ai_investigation', row: 10, column: 1 },
+  { stageId: 'downstream_execution', row: 10, column: 3 },
+  { stageId: 'report_generation', row: 11, column: 2 },
+] as const;
+
+const GRAPH_EDGES = [
+  ['dataset_loading', 'input_validation'],
+  ['input_validation', 'schema_analysis'],
+  ['schema_analysis', 'missing_value_analysis'],
+  ['missing_value_analysis', 'duplicate_analysis'],
+  ['duplicate_analysis', 'numerical_drift_analysis'],
+  ['numerical_drift_analysis', 'categorical_drift_analysis'],
+  ['categorical_drift_analysis', 'findings_aggregation'],
+  ['findings_aggregation', 'protection_gate'],
+  ['protection_gate', 'ai_investigation'],
+  ['protection_gate', 'downstream_execution'],
+  ['ai_investigation', 'report_generation'],
+  ['downstream_execution', 'report_generation'],
+] as const;
+
 const STATUS_LABELS: Record<PipelineStageStatus, string> = {
   pending: 'Pending',
   running: 'Running',
@@ -340,54 +370,11 @@ export function PipelineMonitor() {
             skippedStages={skippedStages}
           />
 
-          <div className="mx-auto max-w-4xl">
-            {run.stages.map((stage, index) => (
-              <div key={stage.stage_id}>
-                <button
-                  type="button"
-                  aria-pressed={selectedStageId === stage.stage_id}
-                  onClick={() => setSelectedStageId(stage.stage_id)}
-                  className={cn(
-                    'w-full rounded-lg border p-4 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400',
-                    STATUS_STYLES[stage.status],
-                    selectedStageId === stage.stage_id
-                      ? 'ring-2 ring-cyan-400'
-                      : 'hover:border-cyan-700',
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-2 text-sm font-semibold">
-                      <StageIcon status={stage.status} />
-                      {stage.name}
-                    </span>
-                    <span className="text-[10px] font-semibold uppercase">
-                      {STATUS_LABELS[stage.status]}
-                    </span>
-                  </div>
-                  <p className="mt-3 text-xs text-[#9BAAC0]">
-                    {formatDuration(stage.duration_ms, stage.status)}
-                  </p>
-                  {stage.findings_count > 0 && (
-                    <p className="mt-2 text-xs text-amber-200">
-                      {stage.findings_count} detector finding
-                      {stage.findings_count === 1 ? '' : 's'}
-                    </p>
-                  )}
-                  {stage.message && (
-                    <p className="mt-2 line-clamp-2 text-xs text-[#9BAAC0]">
-                      {stage.message}
-                    </p>
-                  )}
-                </button>
-                {index < run.stages.length - 1 && (
-                  <div
-                    aria-hidden="true"
-                    className="ml-7 h-5 border-l border-dashed border-[#40516B]"
-                  />
-                )}
-              </div>
-            ))}
-          </div>
+          <PipelineDag
+            stages={run.stages}
+            selectedStageId={selectedStageId}
+            onSelect={setSelectedStageId}
+          />
 
           {selectedStage && <StageDetails stage={selectedStage} />}
 
@@ -432,6 +419,138 @@ export function PipelineMonitor() {
         </Card>
       )}
     </div>
+  );
+}
+
+function PipelineDag({
+  stages,
+  selectedStageId,
+  onSelect,
+}: {
+  stages: PipelineStageState[];
+  selectedStageId: string | null;
+  onSelect: (stageId: string) => void;
+}) {
+  const stageById = new Map(stages.map((stage) => [stage.stage_id, stage]));
+  const nodeById = new Map(GRAPH_NODES.map((node) => [node.stageId, node]));
+  const xPosition = (column: number) => [0, 167, 500, 833][column];
+  const yCenter = (row: number) => 40 + (row - 1) * 100;
+
+  return (
+    <section aria-label="Pipeline dependency graph">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-[#8B9BB4]">
+          Directed dependencies · branch outcomes join in the final report
+        </p>
+        <div className="flex flex-wrap gap-3 text-[10px] text-[#8B9BB4]">
+          {(['completed', 'running', 'failed', 'pending'] as const).map((status) => (
+            <span className="flex items-center gap-1.5" key={status}>
+              <span
+                className={cn(
+                  'h-2 w-2 rounded-full',
+                  status === 'completed' && 'bg-emerald-400',
+                  status === 'running' && 'bg-cyan-300',
+                  status === 'failed' && 'bg-red-400',
+                  status === 'pending' && 'bg-slate-500',
+                )}
+              />
+              {STATUS_LABELS[status]}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-[#223149] bg-[#080F1C] p-3">
+        <div className="relative mx-auto min-w-[700px] max-w-5xl">
+          <svg
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 h-full w-full"
+            viewBox="0 0 1000 1080"
+            preserveAspectRatio="none"
+          >
+            <defs>
+              <marker
+                id="pipeline-arrow"
+                markerWidth="8"
+                markerHeight="8"
+                refX="6"
+                refY="3"
+                orient="auto"
+              >
+                <path d="M0,0 L0,6 L6,3 z" fill="#64748B" />
+              </marker>
+            </defs>
+            {GRAPH_EDGES.map(([sourceId, targetId]) => {
+              const source = nodeById.get(sourceId);
+              const target = nodeById.get(targetId);
+              if (!source || !target) return null;
+              const sourceStage = stageById.get(sourceId);
+              const targetStage = stageById.get(targetId);
+              const startX = xPosition(source.column);
+              const endX = xPosition(target.column);
+              const startY = yCenter(source.row) + 40;
+              const endY = yCenter(target.row) - 40;
+              const curveY = (startY + endY) / 2;
+              const isComplete =
+                sourceStage?.status === 'completed' &&
+                targetStage?.status === 'completed';
+
+              return (
+                <path
+                  key={`${sourceId}-${targetId}`}
+                  d={`M ${startX} ${startY} C ${startX} ${curveY}, ${endX} ${curveY}, ${endX} ${endY}`}
+                  fill="none"
+                  stroke={isComplete ? '#10B981' : '#40516B'}
+                  strokeWidth="2"
+                  markerEnd="url(#pipeline-arrow)"
+                />
+              );
+            })}
+          </svg>
+          <div className="grid h-[1080px] grid-cols-3 grid-rows-[repeat(11,80px)] gap-y-5">
+            {GRAPH_NODES.map(({ stageId, row, column }) => {
+              const stage = stageById.get(stageId);
+              if (!stage) return null;
+              return (
+                <button
+                  key={stage.stage_id}
+                  type="button"
+                  aria-label={`${stage.name}: ${STATUS_LABELS[stage.status]}`}
+                  aria-pressed={selectedStageId === stage.stage_id}
+                  onClick={() => onSelect(stage.stage_id)}
+                  style={{
+                    gridColumn: column,
+                    gridRow: row,
+                  }}
+                  className={cn(
+                    'z-10 mx-2 flex min-w-0 flex-col justify-center rounded-lg border px-3 py-2 text-left shadow-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400',
+                    STATUS_STYLES[stage.status],
+                    selectedStageId === stage.stage_id
+                      ? 'ring-2 ring-cyan-400'
+                      : 'hover:border-cyan-700',
+                  )}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="flex min-w-0 items-center gap-2 text-xs font-semibold">
+                      <StageIcon status={stage.status} />
+                      <span className="truncate">{stage.name}</span>
+                    </span>
+                    {stage.findings_count > 0 && (
+                      <span className="shrink-0 rounded bg-amber-950 px-1.5 py-0.5 text-[10px] text-amber-200">
+                        {stage.findings_count}
+                      </span>
+                    )}
+                  </span>
+                  <span className="mt-2 truncate text-[10px] text-[#9BAAC0]">
+                    {formatDuration(stage.duration_ms, stage.status)}
+                    {stage.message ? ` · ${stage.message}` : ''}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 

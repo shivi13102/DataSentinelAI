@@ -282,6 +282,80 @@ export interface PipelineEvent {
   message: string | null;
 }
 
+export interface ExperimentScenario {
+  scenario_id: string;
+  name: string;
+  description: string;
+  finding_type: string;
+  correction: string;
+}
+
+export interface ExperimentTarget {
+  finding_type: string;
+  column: string | null;
+}
+
+export interface ExperimentOperation {
+  kind: string;
+  column?: string;
+  affected_rows?: number;
+  factor?: number;
+  injected_category?: string;
+}
+
+export interface RecoveryVerification {
+  status:
+    | 'resolved'
+    | 'unresolved'
+    | 'injection_not_detected'
+    | 'analysis_failed';
+  target_findings_detected_before: boolean[];
+  target_findings_detected_after: boolean[];
+  unrelated_findings_remaining: number;
+}
+
+export interface ExperimentRecord {
+  experiment_id: string;
+  scenario_id: string;
+  scenario_name: string;
+  description: string;
+  status: string;
+  created_at: string;
+  updated_at?: string;
+  dataset_name: string;
+  dataset_version_before: string;
+  dataset_version_after_injection: string;
+  dataset_version_after_correction?: string;
+  injection_parameters: ExperimentOperation[];
+  targets: ExperimentTarget[];
+  initial_run_id: string;
+  recovery_run_id: string | null;
+  findings_before: PipelineFinding[];
+  protection_before: ProtectionDecision | null;
+  correction_actions: string[];
+  findings_after: PipelineFinding[];
+  protection_after: ProtectionDecision | null;
+  recovery_verification: RecoveryVerification | null;
+  run_summary?: {
+    run_id: string;
+    status: PipelineRunStatus;
+    protection_decision: ProtectionDecision | null;
+    findings: PipelineFinding[];
+    findings_count: number;
+    report_id: string | null;
+  };
+  run?: PipelineRunState | null;
+  ai_reasoning?: AIReasoning | null;
+}
+
+export interface ExperimentScenariosResponse {
+  scenarios: ExperimentScenario[];
+}
+
+export interface ExperimentsResponse {
+  experiments: ExperimentRecord[];
+}
+
 // ── Report List ───────────────────────────────────────────────
 
 export interface ReportSummary {

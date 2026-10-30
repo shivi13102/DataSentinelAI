@@ -117,29 +117,37 @@ The frontend is designed for cybersecurity operations centers and data infrastru
    - Recent incident streams and AI investigation preview.
 
 2. **Pipeline Monitor:**
-   - Live ordered stage graph driven by actual backend execution events.
-   - Measured durations, safe detector evidence, authoritative gate outcome,
-     downstream enforcement, and final report access.
+   - Live, directed dependency graph with a visible branch from the protection
+     gate into AI investigation and gate-controlled downstream processing,
+     joining at report generation.
+   - Nodes show actual backend status, measured duration, and safe detector
+     evidence; connections describe dependencies, not simulated concurrency.
 
-3. **Dataset Analysis:**
+3. **Anomaly Injection & Recovery Lab (Phase 3):**
+   - Runs six controlled scenarios against a sample or uploaded CSV copy using
+     the real detectors and protection gate.
+   - Applies a narrowly scoped correction to the isolated copy and verifies
+     the targeted finding with a real rerun.
+
+4. **Dataset Analysis:**
    - Drag-and-drop dual-file uploader with size, extension, and empty file validation.
    - Preserves the existing CSV upload-and-analysis workflow. Detector
      operations do not expose incremental progress; the separate Pipeline
      Monitor reports only stage transitions and measurements actually emitted.
 
-4. **Anomaly Explorer:**
+5. **Anomaly Explorer:**
    - Multi-criteria filtering by severity (`High`, `Medium`, `Low`), detector type, and keyword search.
    - Interactive evidence slide-over drawer with side-by-side baseline vs. current comparisons.
 
-5. **AI Investigation Workspace:**
+6. **AI Investigation Workspace:**
    - Dedicated incident analysis dashboard (Incident summary, Root-cause hypotheses with confidence ratings, Business impacts, and remediation checklist).
    - Clear visual distinction between measured facts and unverified AI hypotheses.
 
-6. **Reports & Audit Logs:**
+7. **Reports & Audit Logs:**
    - Complete historical ledger queried via `GET /api/reports`.
    - One-click inspection and JSON export (`GET /api/reports/{id}`).
 
-7. **System Configuration (Settings):**
+8. **System Configuration (Settings):**
    - Dynamic API base URL configuration with live verification against `/api/health`.
    - Engine telemetry and statistical detector registry.
 
@@ -174,7 +182,8 @@ DataSentinelAI/
 │   │   │   └── react-is-shim.ts             # ESM compatibility layer
 │   │   ├── pages/
 │   │   │   ├── Overview.tsx                 # Command Centre
-│   │   │   ├── PipelineMonitor.tsx          # Live run graph and SSE client
+│   │   │   ├── PipelineMonitor.tsx          # Live branched DAG and SSE client
+│   │   │   ├── ExperimentLab.tsx            # Controlled anomaly and recovery
 │   │   │   ├── DatasetAnalysis.tsx          # Dual CSV Ingestion
 │   │   │   ├── AnomalyExplorer.tsx          # Filterable Evidence Grid
 │   │   │   ├── AIInvestigation.tsx          # Gemma Reasoning Workspace
@@ -189,7 +198,7 @@ DataSentinelAI/
 │   ├── package-lock.json
 │   ├── tsconfig.json
 │   └── vite.config.ts
-├── reports/                                 # Generated JSON analysis/evaluation reports
+├── reports/                                 # Reports plus ignored local experiment DB/data
 ├── scripts/
 │   ├── demo_monitored_pipeline.py           # SDK fixture demonstration
 │   ├── evaluate_protection.py               # Metrics and evaluation reports
@@ -198,6 +207,9 @@ DataSentinelAI/
 ├── src/
 │   ├── agents/
 │   │   └── reasoning_agent.py               # Gemma 3 1B structured Ollama client
+│   ├── experiments/
+│   │   ├── lab.py                           # Deterministic injection and recovery
+│   │   └── store.py                         # SQLite metadata and isolated CSV versions
 │   ├── detectors/                           # Statistical detection modules
 │   │   ├── categorical_drift_detector.py    # TVD & Chi-square
 │   │   ├── distribution_detector.py         # Two-sample Kolmogorov-Smirnov
@@ -219,6 +231,7 @@ DataSentinelAI/
 │   ├── fixtures/protection/                 # Scenario CSV pairs and manifest
 │   ├── test_api.py
 │   ├── test_evaluation.py
+│   ├── test_experiments.py                  # Real detector/recovery/API tests
 │   ├── test_monitoring.py                   # SDK and event lifecycle tests
 │   ├── test_ollama_reasoning.py
 │   ├── test_protection_gate.py
@@ -462,7 +475,72 @@ not cancel execution or change the gate decision. If event publication inside
 the process fails, the run fails closed rather than authorizing downstream
 work.
 
-## 11. API Specification
+## 11. Phase 3 Work Started: Experiment Lab
+
+Phase 3 is being implemented in increments. The branched Pipeline Monitor and
+the first end-to-end Phase 3 capability are available; lineage, governed
+baselines, investigation graphs, human release approvals, and the reliability
+dashboard are not implemented yet.
+
+The **Experiment Lab** runs against either the built-in
+`data/raw/baseline.csv` sample or a CSV uploaded for the experiment. It creates
+an isolated source copy and a derived injected copy, then queues the same
+instrumented analysis, deterministic protection gate, optional Gemma reasoning,
+and report path used by monitored runs. Supported scenarios are:
+
+| Scenario ID | Controlled change | Target detector |
+|---|---|---|
+| `missing_values` | Set 15% of a populated, non-identifier column to missing | Missing-value detector |
+| `duplicate_records` | Append copies of 10% of source rows | Duplicate detector |
+| `schema_change` | Add a reserved experiment-only column | Schema detector |
+| `numeric_drift` | Multiply a measured numeric column by 5 | Numeric distribution detector |
+| `categorical_drift` | Replace 30% of a categorical column with a new category | Categorical drift detector |
+| `combined` | Inject missing values and duplicate rows | Missing-value and duplicate detectors |
+
+Each scenario checks its actual dataset requirements. The target finding shown
+as the scenario prediction is not treated as a measured result: the UI reports
+the detector's real findings and protection decision. If a target is not found,
+recovery verification says `injection_not_detected`, not `resolved`.
+
+The correction is permitted only on the experiment-derived copy. It restores
+the affected values/column from the preserved source or removes rows appended
+by the experiment, creates a new recovered dataset version, and executes the
+real engine again. Python verifies that the specifically targeted finding
+appeared before correction and no longer appears for the same detector/column
+after correction. It reports unrelated remaining findings separately; a
+reduced total count alone is not considered recovery.
+
+Dataset fingerprints are SHA-256 hashes of the normalized, parsed CSV
+serialized without the dataframe index, using LF line endings and an empty
+field for null values. Row and column order are therefore part of the version.
+SQLite experiment metadata and an append-only experiment event ledger are
+stored under ignored `reports/experiments.sqlite3`; source, injected, and
+recovered CSV copies are stored under ignored `reports/experiments/`. The
+user's original upload is never edited. These local experiment copies can
+contain the uploaded data and should be treated as sensitive; no retention or
+deletion UI is implemented yet.
+
+Each experiment submits through the Phase 2 event-backed run manager and its
+status is available from the Experiment Lab history. The deterministic
+experiment and recovery continue when Ollama/Gemma is unavailable; any
+successful model explanation is advisory and does not change findings,
+recovery verification, or the gate decision.
+
+Open **Experiment Lab**, choose a scenario and either the built-in sample or a
+CSV, then run the experiment. After the measured analysis completes, use
+**Apply correction and rerun** to compare before/after evidence and inspect
+targeted recovery verification. The dataset-analysis upload flow remains
+unchanged.
+
+| Endpoint | Method | Behavior |
+|---|---|---|
+| `/api/experiments/scenarios` | `GET` | Returns available scenarios and their requirements/correction descriptions. |
+| `/api/experiments` | `POST` | Multipart `scenario_id`, optional `dataset_file`; creates isolated versions and starts a real monitored run. |
+| `/api/experiments?limit=N` | `GET` | Lists up to 100 persisted experiment records. |
+| `/api/experiments/{experiment_id}` | `GET` | Returns experiment metadata, latest run state, findings, gate decision, and optional AI status. |
+| `/api/experiments/{experiment_id}/correct` | `POST` | Applies the scenario-specific correction once and starts a real recovery run. Repeated requests return the existing recovery result. |
+
+## 12. API Specification
 
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
@@ -471,10 +549,11 @@ work.
 | `/api/reports` | `GET` | Lists all saved analysis reports in reverse chronological order. |
 | `/api/reports/{id}` | `GET` | Downloads a saved JSON report using a generated report ID. |
 | `/api/pipeline-runs` and `/api/pipeline-runs/{run_id}...` | `POST` / `GET` | Live monitored execution, run state, retained event history, SSE events, and final report; see the Live Monitoring section for exact shapes. |
+| `/api/experiments...` | `GET` / `POST` | Controlled injection, history, monitored execution, and targeted recovery; see the Phase 3 section. |
 
 ---
 
-## 12. Jenkins and CI
+## 13. Jenkins and CI
 
 GitHub Actions runs the Python tests and frontend production build. The Jenkins
 pipeline offers `current`, `healthy`, `suspicious`, and `critical` scenarios.
@@ -496,7 +575,7 @@ console log was not available. The pipeline now uses a build-specific artifact,
 clears only that build's generated output before execution, and re-reads the
 file at enforcement rather than trusting an environment-variable value.
 
-## 13. Security & Compliance
+## 14. Security & Compliance
 
 - **Zero External Telemetry:** All statistical computations occur in local memory.
 - **Local AI Privacy:** With the default local API and Ollama configuration, uploaded data stays on this machine. Configuring a remote API base URL sends uploads to that server.
@@ -507,6 +586,6 @@ file at enforcement rather than trusting an environment-variable value.
 
 ---
 
-## 14. License
+## 15. License
 
 This project is licensed under the Apache 2.0 License.

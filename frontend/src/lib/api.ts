@@ -11,6 +11,10 @@ import type {
   ReportsResponse,
   PipelineEvent,
   PipelineRunState,
+  ExperimentRecord,
+  ExperimentScenario,
+  ExperimentScenariosResponse,
+  ExperimentsResponse,
 } from '../types/api';
 
 const STORAGE_KEY = 'ds_api_base_url';
@@ -99,6 +103,52 @@ export async function fetchPipelineRun(
     `${getApiBaseUrl()}/api/pipeline-runs/${encodeURIComponent(runId)}`,
   );
   return handleResponse<PipelineRunState>(res);
+}
+
+export async function fetchExperimentScenarios(): Promise<ExperimentScenario[]> {
+  const res = await fetch(`${getApiBaseUrl()}/api/experiments/scenarios`);
+  const result = await handleResponse<ExperimentScenariosResponse>(res);
+  return result.scenarios;
+}
+
+export async function fetchExperiments(): Promise<ExperimentRecord[]> {
+  const res = await fetch(`${getApiBaseUrl()}/api/experiments?limit=20`);
+  const result = await handleResponse<ExperimentsResponse>(res);
+  return result.experiments;
+}
+
+export async function fetchExperiment(
+  experimentId: string,
+): Promise<ExperimentRecord> {
+  const res = await fetch(
+    `${getApiBaseUrl()}/api/experiments/${encodeURIComponent(experimentId)}`,
+  );
+  return handleResponse<ExperimentRecord>(res);
+}
+
+export async function createExperiment(
+  scenarioId: string,
+  datasetFile?: File,
+): Promise<ExperimentRecord> {
+  const form = new FormData();
+  form.append('scenario_id', scenarioId);
+  if (datasetFile) form.append('dataset_file', datasetFile);
+
+  const res = await fetch(`${getApiBaseUrl()}/api/experiments`, {
+    method: 'POST',
+    body: form,
+  });
+  return handleResponse<ExperimentRecord>(res);
+}
+
+export async function correctExperiment(
+  experimentId: string,
+): Promise<ExperimentRecord> {
+  const res = await fetch(
+    `${getApiBaseUrl()}/api/experiments/${encodeURIComponent(experimentId)}/correct`,
+    { method: 'POST' },
+  );
+  return handleResponse<ExperimentRecord>(res);
 }
 
 export function subscribeToPipelineRun(

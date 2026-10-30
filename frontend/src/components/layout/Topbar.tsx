@@ -12,6 +12,7 @@ import { cn } from '../../lib/utils';
 const PAGE_LABELS: Record<Page, { title: string; breadcrumb: string[] }> = {
   overview:      { title: 'Overview',           breadcrumb: ['DataSentinel AI', 'Overview'] },
   pipeline:      { title: 'Pipeline Monitor',   breadcrumb: ['DataSentinel AI', 'Pipeline Monitor'] },
+  experiments:   { title: 'Experiment Lab',     breadcrumb: ['DataSentinel AI', 'Experiment Lab'] },
   analysis:      { title: 'Dataset Analysis',   breadcrumb: ['DataSentinel AI', 'Dataset Analysis'] },
   anomalies:     { title: 'Anomaly Explorer',   breadcrumb: ['DataSentinel AI', 'Anomaly Explorer'] },
   investigation: { title: 'AI Investigation',   breadcrumb: ['DataSentinel AI', 'AI Investigation'] },
@@ -127,4 +128,3 @@ function BackendIndicator({ status }: { status: 'checking' | 'online' | 'offline
     </div>
   );
 }
-

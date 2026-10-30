@@ -21,6 +21,7 @@ import { ToastContainer } from './components/ui/Toast';
 
 import { Overview } from './pages/Overview';
 import { PipelineMonitor } from './pages/PipelineMonitor';
+import { ExperimentLab } from './pages/ExperimentLab';
 import { DatasetAnalysis } from './pages/DatasetAnalysis';
 import { AnomalyExplorer } from './pages/AnomalyExplorer';
 import { AIInvestigation } from './pages/AIInvestigation';
@@ -32,6 +33,7 @@ import { SettingsPage } from './pages/Settings';
 export type Page =
   | 'overview'
   | 'pipeline'
+  | 'experiments'
   | 'analysis'
   | 'anomalies'
   | 'investigation'
@@ -205,6 +207,7 @@ export default function App() {
             <div className="animate-fade-in">
               {currentPage === 'overview'      && <Overview />}
               {currentPage === 'pipeline'      && <PipelineMonitor />}
+              {currentPage === 'experiments'  && <ExperimentLab />}
               {currentPage === 'analysis'      && <DatasetAnalysis />}
               {currentPage === 'anomalies'     && <AnomalyExplorer />}
               {currentPage === 'investigation' && <AIInvestigation />}

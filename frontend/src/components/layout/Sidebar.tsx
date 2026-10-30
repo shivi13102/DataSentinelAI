@@ -6,6 +6,7 @@ import { useContext } from 'react';
 import {
   LayoutDashboard,
   GitBranch,
+  FlaskConical,
   Upload,
   Search,
   Brain,
@@ -28,6 +29,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { page: 'overview',      label: 'Overview',          icon: LayoutDashboard, description: 'Command centre' },
   { page: 'pipeline',      label: 'Pipeline Monitor',  icon: GitBranch,       description: 'Data flow status' },
+  { page: 'experiments',   label: 'Experiment Lab',    icon: FlaskConical,     description: 'Inject and recover anomalies' },
   { page: 'analysis',      label: 'Dataset Analysis',  icon: Upload,          description: 'Upload & analyse' },
   { page: 'anomalies',     label: 'Anomaly Explorer',  icon: Search,          description: 'Investigate findings' },
   { page: 'investigation', label: 'AI Investigation',  icon: Brain,           description: 'Gemma reasoning' },
@@ -150,4 +152,3 @@ function BrandIcon() {
     </svg>
   );
 }
-
