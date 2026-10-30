@@ -176,6 +176,8 @@ export interface DatasetMetadata {
 
 export interface AnalysisReport {
   report_id: string;
+  run_id?: string;
+  monitoring?: PipelineRunState;
   workflow_status: string;
   overall_status: string;
   analysis: Analysis;
@@ -185,6 +187,99 @@ export interface AnalysisReport {
   error: string;
   dataset_metadata: DatasetMetadata;
   generated_at: string;
+}
+
+export type PipelineRunStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'review_required'
+  | 'blocked'
+  | 'failed';
+
+export type PipelineStageStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'skipped'
+  | 'blocked';
+
+export interface PipelineFinding {
+  finding_id: string;
+  detector_type: string;
+  severity: Severity;
+  column: string | null;
+  description: string;
+  detection_method: string;
+  baseline_metrics: Record<string, string | number | boolean | null>;
+  current_metrics: Record<string, string | number | boolean | null>;
+}
+
+export interface PipelineStageState {
+  stage_id: string;
+  name: string;
+  status: PipelineStageStatus;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_ms: number | null;
+  progress: number | null;
+  findings_count: number;
+  findings: PipelineFinding[];
+  error_category: string | null;
+  message: string | null;
+}
+
+export interface PipelineRunState {
+  run_id: string;
+  pipeline_name: string;
+  status: PipelineRunStatus;
+  created_at: string;
+  updated_at: string;
+  current_stage: string | null;
+  stages: PipelineStageState[];
+  findings: PipelineFinding[];
+  findings_count: number;
+  protection_decision: ProtectionDecision | null;
+  downstream_processing_allowed: boolean;
+  downstream_executed: boolean;
+  protection_reasons: string[];
+  report_id: string | null;
+  latest_sequence: number;
+  history_truncated: boolean;
+  error_category: string | null;
+}
+
+export interface PipelineEvent {
+  event_id: string;
+  run_id: string;
+  sequence: number;
+  timestamp: string;
+  event_type:
+    | 'pipeline_started'
+    | 'stage_started'
+    | 'stage_progress'
+    | 'stage_completed'
+    | 'stage_failed'
+    | 'stage_skipped'
+    | 'finding_detected'
+    | 'protection_decided'
+    | 'pipeline_completed'
+    | 'pipeline_failed'
+    | 'pipeline_blocked';
+  stage_id: string | null;
+  stage_name: string | null;
+  status: PipelineStageStatus | null;
+  progress: number | null;
+  duration_ms: number | null;
+  finding_count: number | null;
+  finding: PipelineFinding | null;
+  protection_decision: ProtectionDecision | null;
+  downstream_processing_allowed: boolean | null;
+  finding_counts: FindingCounts | null;
+  reasons: string[] | null;
+  error_category: string | null;
+  message: string | null;
 }
 
 // ── Report List ───────────────────────────────────────────────

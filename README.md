@@ -117,12 +117,15 @@ The frontend is designed for cybersecurity operations centers and data infrastru
    - Recent incident streams and AI investigation preview.
 
 2. **Pipeline Monitor:**
-   - Visual data topology: `Source Dataset` $\to$ `Transformation` $\to$ `Data Validation` $\to$ `AI Investigation` $\to$ `Downstream Analytics`.
-   - Node-level inspection drawer displaying raw statistical evidence.
+   - Live ordered stage graph driven by actual backend execution events.
+   - Measured durations, safe detector evidence, authoritative gate outcome,
+     downstream enforcement, and final report access.
 
 3. **Dataset Analysis:**
    - Drag-and-drop dual-file uploader with size, extension, and empty file validation.
-   - Upload status while the backend runs analysis; granular backend progress events are not currently available.
+   - Preserves the existing CSV upload-and-analysis workflow. Detector
+     operations do not expose incremental progress; the separate Pipeline
+     Monitor reports only stage transitions and measurements actually emitted.
 
 4. **Anomaly Explorer:**
    - Multi-criteria filtering by severity (`High`, `Medium`, `Low`), detector type, and keyword search.
@@ -166,12 +169,12 @@ DataSentinelAI/
 │   │   │   ├── layout/                      # Sidebar and Topbar navigation
 │   │   │   └── ui/                          # Badge, Card, Button, Drawer, Toast
 │   │   ├── lib/
-│   │   │   ├── api.ts                       # Typed REST client
+│   │   │   ├── api.ts                       # Typed REST and SSE client
 │   │   │   ├── utils.ts                     # Scoring, formatting, and download utilities
 │   │   │   └── react-is-shim.ts             # ESM compatibility layer
 │   │   ├── pages/
 │   │   │   ├── Overview.tsx                 # Command Centre
-│   │   │   ├── PipelineMonitor.tsx          # Topology Node Observability
+│   │   │   ├── PipelineMonitor.tsx          # Live run graph and SSE client
 │   │   │   ├── DatasetAnalysis.tsx          # Dual CSV Ingestion
 │   │   │   ├── AnomalyExplorer.tsx          # Filterable Evidence Grid
 │   │   │   ├── AIInvestigation.tsx          # Gemma Reasoning Workspace
@@ -188,6 +191,7 @@ DataSentinelAI/
 │   └── vite.config.ts
 ├── reports/                                 # Generated JSON analysis/evaluation reports
 ├── scripts/
+│   ├── demo_monitored_pipeline.py           # SDK fixture demonstration
 │   ├── evaluate_protection.py               # Metrics and evaluation reports
 │   ├── generate_protection_fixtures.py      # Deterministic scenario generator
 │   └── run_pipeline.py                      # CLI analysis and run artifacts
@@ -202,6 +206,11 @@ DataSentinelAI/
 │   │   └── schema_detector.py               # Structural column set changes
 │   ├── graph/
 │   │   └── workflow.py                      # LangGraph StateGraph orchestration
+│   ├── monitoring/
+│   │   ├── events.py                        # Validated event and finding schemas
+│   │   ├── execution.py                     # Instrumented analysis/gate/report flow
+│   │   ├── run_manager.py                   # Bounded in-memory run/event registry
+│   │   └── sdk.py                           # Python PipelineRun and stage contexts
 │   ├── utils/
 │   │   └── data_loader.py                   # Pandas CSV loader
 │   ├── analysis_engine.py                   # Deterministic detection coordinator
@@ -210,6 +219,7 @@ DataSentinelAI/
 │   ├── fixtures/protection/                 # Scenario CSV pairs and manifest
 │   ├── test_api.py
 │   ├── test_evaluation.py
+│   ├── test_monitoring.py                   # SDK and event lifecycle tests
 │   ├── test_ollama_reasoning.py
 │   ├── test_protection_gate.py
 │   └── ...                                  # Detector and integration tests
@@ -352,7 +362,107 @@ Ollama; AI latency is then unavailable, not zero. The synthetic fixture set
 is small and is not evidence of production performance or readiness. The
 reports include metric definitions and limitations.
 
-## 10. API Specification
+## 10. Live monitoring and Python instrumentation
+
+The **Pipeline Monitor** page now starts an actual backend execution. It can
+run the deterministic fixtures or accept a custom CSV pair. The existing
+`/api/analyze` upload flow remains available and unchanged. The monitored
+execution reuses the same CSV loader, detector functions, deterministic gate,
+AI reasoning helper, and report persistence implementation.
+
+```text
+React Pipeline Monitor
+        │ POST /api/pipeline-runs
+        ▼
+FastAPI bounded run manager ── worker thread ── Python PipelineRun SDK
+        │                                        │
+        │ GET run state / SSE                    ├─ existing analysis engine
+        ▼                                        ├─ deterministic protection gate
+Live stage graph ◀── ordered, validated events   └─ report generation
+```
+
+Server-Sent Events (SSE) are used because the browser only consumes events;
+run creation remains a normal HTTP request. Each event has a UUID `event_id`,
+UUID `run_id`, monotonic per-run `sequence`, UTC `timestamp`, `event_type`, and
+only the stage, finding, decision, duration, or safe diagnostic fields relevant
+to that event. Event types include `pipeline_started`, `stage_started`,
+`stage_progress`, `stage_completed`, `stage_failed`, `stage_skipped`,
+`finding_detected`, `protection_decided`, `pipeline_completed`,
+`pipeline_blocked`, and `pipeline_failed`. Payloads are schema-validated and
+limited to 8 KiB. Finding events carry detector metadata and allowlisted
+statistics, not dataset rows or categorical values.
+
+Pipeline states are `queued`, `running`, `completed`, `review_required`,
+`blocked`, and `failed`. `REVIEW_REQUIRED` and `BLOCK` are policy outcomes,
+not software errors: the downstream node is marked blocked and is not invoked.
+Only a consistent `ALLOW` from `evaluate_pipeline_gate` can invoke the
+simulated downstream callback. No approval or external downstream integration
+is provided. The current detector operations cannot report incremental work,
+so no progress percentages are invented; measured durations are emitted when
+stages complete.
+
+The `src.monitoring.PipelineRun` SDK publishes to an injected Python event
+publisher without depending on SSE or FastAPI:
+
+```python
+from pathlib import Path
+from uuid import uuid4
+
+from src.analysis_engine import analyze_datasets
+from src.monitoring import PipelineRun
+from src.utils.data_loader import load_csv
+
+fixtures = Path("tests/fixtures/protection")
+baseline = load_csv(fixtures / "healthy_baseline.csv")
+current = load_csv(fixtures / "healthy_current.csv")
+events = []
+with PipelineRun(str(uuid4()), "example_pipeline", events.append) as run:
+    with run.stage("validation", "Data Validation"):
+        analysis = analyze_datasets(baseline, current, monitor=run)
+```
+
+The executable example uses the project's real fixture loader, analysis
+engine, gate, and report writer:
+
+```powershell
+python scripts\demo_monitored_pipeline.py --scenario healthy --skip-ai
+python scripts\demo_monitored_pipeline.py --scenario suspicious --skip-ai
+python scripts\demo_monitored_pipeline.py --scenario critical --skip-ai
+```
+
+In the UI, open **Pipeline Monitor**, choose a fixture or **Upload custom CSV
+pair**, and start the run. Refreshing the page restores the saved run ID,
+retrieves its authoritative state, and reconnects to its event stream.
+
+The run API is:
+
+| Endpoint | Method | Behavior |
+|---|---|---|
+| `/api/pipeline-runs` | `POST` | Multipart `scenario` field for a checked-in fixture, or `scenario=custom` plus `baseline_file` and `current_file`; returns a current snapshot with HTTP 202. |
+| `/api/pipeline-runs/{run_id}` | `GET` | Authoritative run snapshot with stage states, decision, finding count, report reference, and latest sequence. |
+| `/api/pipeline-runs/{run_id}/history?after_sequence=N` | `GET` | Returns retained structured events after a sequence cursor and whether earlier history was truncated. |
+| `/api/pipeline-runs/{run_id}/events?after_sequence=N` | `GET` | SSE stream with sequence-valued event IDs; reconnects honor `Last-Event-ID`. An SSE `reset` event carries a fresh snapshot if history was evicted. |
+| `/api/pipeline-runs/{run_id}/report` | `GET` | Downloads the final report after the run reaches a terminal state. |
+
+Run snapshots and the last 100 events per run are held in process memory;
+completed runs are retained up to 50 entries and older completed runs may be
+evicted when a new run is created. The worker pool has two workers, accepts at
+most four active/queued runs, and caps each run at 20 concurrent event-stream
+subscribers. Reconnection can recover the current snapshot and retained
+history, but events older than the retained window are not replayed. A process
+restart loses all run state and active tasks, and multiple Uvicorn workers do
+not share run data. This implementation is for local/single-process use, not
+durable or distributed orchestration. Cancellation is not implemented.
+
+There is no authentication or external SDK event-ingestion endpoint. The
+backend is intended to be bound to localhost as shown in Quickstart; do not
+expose it publicly. The Python SDK is trusted in-process instrumentation, not
+proof that an external client safely performed work. Browser disconnects do
+not cancel execution or change the gate decision. If event publication inside
+the process fails, the run fails closed rather than authorizing downstream
+work.
+
+## 11. API Specification
 
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
@@ -360,10 +470,11 @@ reports include metric definitions and limitations.
 | `/api/analyze` | `POST` | Accepts multipart form data (`baseline_file`, `current_file`), each limited to 50 MiB. Runs detection, optional reasoning, gating, and report persistence. |
 | `/api/reports` | `GET` | Lists all saved analysis reports in reverse chronological order. |
 | `/api/reports/{id}` | `GET` | Downloads a saved JSON report using a generated report ID. |
+| `/api/pipeline-runs` and `/api/pipeline-runs/{run_id}...` | `POST` / `GET` | Live monitored execution, run state, retained event history, SSE events, and final report; see the Live Monitoring section for exact shapes. |
 
 ---
 
-## 11. Jenkins and CI
+## 12. Jenkins and CI
 
 GitHub Actions runs the Python tests and frontend production build. The Jenkins
 pipeline offers `current`, `healthy`, `suspicious`, and `critical` scenarios.
@@ -374,15 +485,18 @@ and `BLOCK` skip it and mark the build unstable; missing or invalid decision
 artifacts fail closed. Reports and decision artifacts are archived when
 available.
 
-No live Jenkins controller was available for verification in this environment.
-The historical `UNSET` report could not be tied to a definitive Jenkins runtime
-cause because its console log was not available. The previous source relied on
-a shared decision-file path and a mutable environment variable across stages;
-the pipeline now uses a build-specific artifact, clears only that build's
-generated output before execution, and re-reads the file at enforcement rather
-than trusting an environment-variable value.
+The user-verified Jenkins build ran all 128 Python tests successfully and
+analyzed the `current` dataset. Its actual decision was `BLOCK`, so Jenkins
+finished `UNSTABLE` and intentionally skipped simulated downstream processing;
+that is the configured policy outcome, not a test failure. Choose
+`SCENARIO=healthy` to verify the green `ALLOW` path. The user also reported that
+the GitHub Actions jobs completed successfully. The historical `UNSET` report
+could not be tied to a definitive Jenkins runtime cause because its original
+console log was not available. The pipeline now uses a build-specific artifact,
+clears only that build's generated output before execution, and re-reads the
+file at enforcement rather than trusting an environment-variable value.
 
-## 12. Security & Compliance
+## 13. Security & Compliance
 
 - **Zero External Telemetry:** All statistical computations occur in local memory.
 - **Local AI Privacy:** With the default local API and Ollama configuration, uploaded data stays on this machine. Configuring a remote API base URL sends uploads to that server.
@@ -393,6 +507,6 @@ than trusting an environment-variable value.
 
 ---
 
-## 13. License
+## 14. License
 
 This project is licensed under the Apache 2.0 License.

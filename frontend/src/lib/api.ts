@@ -9,6 +9,8 @@ import type {
   HealthResponse,
   AnalysisReport,
   ReportsResponse,
+  PipelineEvent,
+  PipelineRunState,
 } from '../types/api';
 
 const STORAGE_KEY = 'ds_api_base_url';
@@ -73,6 +75,64 @@ export async function analyzeDatasets(
   return handleResponse<AnalysisReport>(res);
 }
 
+export async function createPipelineRun(
+  scenario: string,
+  baselineFile?: File,
+  currentFile?: File,
+): Promise<PipelineRunState> {
+  const form = new FormData();
+  form.append('scenario', scenario);
+  if (baselineFile) form.append('baseline_file', baselineFile);
+  if (currentFile) form.append('current_file', currentFile);
+
+  const res = await fetch(`${getApiBaseUrl()}/api/pipeline-runs`, {
+    method: 'POST',
+    body: form,
+  });
+  return handleResponse<PipelineRunState>(res);
+}
+
+export async function fetchPipelineRun(
+  runId: string,
+): Promise<PipelineRunState> {
+  const res = await fetch(
+    `${getApiBaseUrl()}/api/pipeline-runs/${encodeURIComponent(runId)}`,
+  );
+  return handleResponse<PipelineRunState>(res);
+}
+
+export function subscribeToPipelineRun(
+  runId: string,
+  afterSequence: number,
+  onEvent: (event: PipelineEvent) => void,
+  onReset: (state: PipelineRunState) => void,
+  onConnectionChange: (connected: boolean) => void,
+): EventSource {
+  const url = new URL(
+    `${getApiBaseUrl()}/api/pipeline-runs/${encodeURIComponent(runId)}/events`,
+  );
+  url.searchParams.set('after_sequence', String(afterSequence));
+  const source = new EventSource(url);
+
+  source.onopen = () => onConnectionChange(true);
+  source.onerror = () => onConnectionChange(false);
+  source.addEventListener('pipeline', (message: MessageEvent<string>) => {
+    try {
+      onEvent(JSON.parse(message.data) as PipelineEvent);
+    } catch {
+      onConnectionChange(false);
+    }
+  });
+  source.addEventListener('reset', (message: MessageEvent<string>) => {
+    try {
+      onReset(JSON.parse(message.data) as PipelineRunState);
+    } catch {
+      onConnectionChange(false);
+    }
+  });
+  return source;
+}
+
 /**
  * Retrieve saved report summaries (newest first).
  */
@@ -99,4 +159,3 @@ export async function downloadReportBlob(reportId: string): Promise<Blob> {
   }
   return res.blob();
 }
-
