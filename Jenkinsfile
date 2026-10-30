@@ -65,6 +65,7 @@ pipeline {
             }
         }
 
+        
         stage('Read Protection Decision') {
             steps {
                 script {
@@ -77,21 +78,30 @@ pipeline {
                         )
                     }
 
-                    env.DATASENTINEL_DECISION = readFile(decisionFile)
-                        .trim()
-                        .toUpperCase()
+                    // Read the file into a local variable first.
+                    def decisionText = readFile(
+                        file: decisionFile,
+                        encoding: 'UTF-8'
+                    ).trim()
 
-                    if (!(env.DATASENTINEL_DECISION in [
+                    echo "Raw protection decision from file: '${decisionText}'"
+
+                    def validatedDecision = decisionText.toUpperCase()
+
+                    if (!(validatedDecision in [
                         'ALLOW',
                         'REVIEW_REQUIRED',
                         'BLOCK'
                     ])) {
                         error(
                             'Invalid protection decision: ' +
-                            env.DATASENTINEL_DECISION +
+                            validatedDecision +
                             '. Failing closed.'
                         )
                     }
+
+                    // Update the environment only after validation.
+                    env.DATASENTINEL_DECISION = validatedDecision
 
                     echo(
                         'DataSentinel protection decision: ' +
@@ -100,6 +110,7 @@ pipeline {
                 }
             }
         }
+
 
         stage('Simulated Downstream Processing') {
             when {
