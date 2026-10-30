@@ -1,0 +1,102 @@
+// ============================================================
+// DataSentinel AI – Typed API client
+// All communication with FastAPI goes through this module.
+// No secrets are stored here. The base URL is persisted in
+// localStorage so users can adjust it in Settings.
+// ============================================================
+
+import type {
+  HealthResponse,
+  AnalysisReport,
+  ReportsResponse,
+} from '../types/api';
+
+const STORAGE_KEY = 'ds_api_base_url';
+export const DEFAULT_BASE_URL = 'http://127.0.0.1:8000';
+
+export function getApiBaseUrl(): string {
+  return localStorage.getItem(STORAGE_KEY) ?? DEFAULT_BASE_URL;
+}
+
+export function setApiBaseUrl(url: string): void {
+  const trimmed = url.trim().replace(/\/$/, '');
+  if (trimmed) {
+    localStorage.setItem(STORAGE_KEY, trimmed);
+  }
+}
+
+// ── Internal helpers ──────────────────────────────────────────
+
+async function handleResponse<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    let detail = `HTTP ${res.status} – ${res.statusText}`;
+    try {
+      const body = (await res.json()) as Record<string, unknown>;
+      if (typeof body?.detail === 'string') detail = body.detail;
+    } catch {
+      // Body is not JSON; use status text.
+    }
+    throw new Error(detail);
+  }
+  return res.json() as Promise<T>;
+}
+
+// ── Public API functions ──────────────────────────────────────
+
+/**
+ * Verify that the backend is reachable and retrieve its
+ * configuration information.
+ */
+export async function checkHealth(): Promise<HealthResponse> {
+  const res = await fetch(`${getApiBaseUrl()}/api/health`);
+  return handleResponse<HealthResponse>(res);
+}
+
+/**
+ * Submit two CSV files for analysis.
+ * Uses multipart/form-data; the boundary is set by the browser.
+ * Do NOT manually set Content-Type on FormData requests.
+ */
+export async function analyzeDatasets(
+  baselineFile: File,
+  currentFile: File,
+): Promise<AnalysisReport> {
+  const form = new FormData();
+  form.append('baseline_file', baselineFile);
+  form.append('current_file', currentFile);
+
+  const res = await fetch(`${getApiBaseUrl()}/api/analyze`, {
+    method: 'POST',
+    body: form,
+  });
+
+  return handleResponse<AnalysisReport>(res);
+}
+
+/**
+ * Retrieve saved report summaries (newest first).
+ */
+export async function fetchReports(): Promise<ReportsResponse> {
+  const res = await fetch(`${getApiBaseUrl()}/api/reports`);
+  return handleResponse<ReportsResponse>(res);
+}
+
+/**
+ * Retrieve the full JSON of a specific saved report.
+ */
+export async function fetchReport(reportId: string): Promise<AnalysisReport> {
+  const res = await fetch(`${getApiBaseUrl()}/api/reports/${reportId}`);
+  return handleResponse<AnalysisReport>(res);
+}
+
+/**
+ * Download a saved report as a Blob for file-system export.
+ */
+export async function downloadReportBlob(reportId: string): Promise<Blob> {
+  const res = await fetch(`${getApiBaseUrl()}/api/reports/${reportId}`);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  return res.blob();
+}
+
