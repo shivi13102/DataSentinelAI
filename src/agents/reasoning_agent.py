@@ -25,38 +25,50 @@ def _build_prompt(analysis_results: dict[str, Any]) -> str:
     }
 
     return f"""
-You are DataSentinel AI, an assistant for data pipeline monitoring.
+You are the incident analysis agent for DataSentinel AI.
 
-Analyze the following evidence calculated by Python:
+Your job is to explain ALL anomalies detected by Python.
 
-{json.dumps(evidence, separators=(",", ":"), default=str)}
+PYTHON ANALYSIS EVIDENCE:
+{json.dumps(evidence, indent=2, default=str)}
 
-Return one valid JSON object with exactly these keys:
+Requirements:
+
+1. Summarize the overall incident and mention the most important findings.
+2. Review EVERY finding supplied by Python.
+3. Include at least one root-cause hypothesis for each finding.
+4. Link each hypothesis to specific evidence from the findings.
+5. Explain the potential business impact of each major anomaly.
+6. Recommend practical investigation and prevention steps.
+7. Clearly distinguish confirmed measurements from possible causes.
+8. Do not invent statistics, measurements, logs, or causes.
+9. Do not claim to have inspected external systems.
+10. Do not recommend automatically modifying or deleting production data.
+11. Require human review before production changes.
+12. Keep the response concise but cover every finding.
+
+Return valid JSON only, without Markdown fences, using exactly this structure:
 
 {{
-    "incident_summary": "Short summary of the incident",
+    "incident_summary": "Overall incident summary covering the major findings",
     "root_cause_hypotheses": [
         {{
-            "hypothesis": "Possible cause, explicitly described as a hypothesis",
-            "supporting_evidence": "Evidence from the supplied findings",
+            "hypothesis": "Possible explanation for a detected anomaly",
+            "supporting_evidence": "Specific supplied finding supporting this hypothesis",
             "confidence": "low, medium, or high"
         }}
     ],
-    "business_impacts": ["Potential business impact"],
-    "recommended_actions": ["Specific investigation or corrective action"],
+    "business_impacts": [
+        "Potential business impact linked to a detected anomaly"
+    ],
+    "recommended_actions": [
+        "Specific investigation or corrective action"
+    ],
     "human_review_required": true
 }}
 
-Rules:
-
-- Python findings are the source of truth. Do not invent measurements.
-- Causes are hypotheses, not confirmed facts.
-- Recommend investigation before changing production data.
-- Do not claim to have inspected logs, code, or external systems.
-- Keep the summary short.
-- Include up to 3 hypotheses, 3 impacts, and 4 actions.
-- If there are no findings, say no anomalies were detected.
-- Return JSON only, without Markdown fences.
+Include at least one hypothesis per finding. If there are four findings,
+include at least four hypotheses. Do not present hypotheses as confirmed causes.
 """.strip()
 
 
@@ -83,8 +95,8 @@ def explain_findings(
         "stream": False,
         "format": "json",
         "options": {
-            "temperature": 0.1,
-            "num_predict": 500,
+            "temperature": 0,
+            "num_predict": 1000,
         },
     }
 
