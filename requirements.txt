@@ -15,11 +15,14 @@ requests>=2.31
 
 # --- AI workflow orchestration ---
 langgraph>=0.2
+typing-extensions>=4.12
 
 # --- Testing ---
 pytest>=8.0
 
-# --- frontend ---
-fastapi
-uvicorn
-python-multipart
+# --- API ---
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
+
+# Frontend dependencies are managed in frontend/package.json.

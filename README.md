@@ -20,6 +20,30 @@ DataSentinelAI/
 │   │   │   ├── hero.png
 │   │   │   ├── react.svg
 │   │   │   └── vite.svg
+│   │   ├── components/
+│   │   │   ├── layout/
+│   │   │   │   ├── Sidebar.tsx
+│   │   │   │   └── Topbar.tsx
+│   │   │   └── ui/
+│   │   │       ├── Badge.tsx
+│   │   │       ├── Button.tsx
+│   │   │       ├── Card.tsx
+│   │   │       ├── EmptyState.tsx
+│   │   │       ├── Skeleton.tsx
+│   │   │       └── Toast.tsx
+│   │   ├── lib/
+│   │   │   ├── api.ts
+│   │   │   └── utils.ts
+│   │   ├── pages/
+│   │   │   ├── AIInvestigation.tsx
+│   │   │   ├── AnomalyExplorer.tsx
+│   │   │   ├── DatasetAnalysis.tsx
+│   │   │   ├── Overview.tsx
+│   │   │   ├── PipelineMonitor.tsx
+│   │   │   ├── Reports.tsx
+│   │   │   └── Settings.tsx
+│   │   ├── types/
+│   │   │   └── api.ts
 │   │   ├── App.css
 │   │   ├── App.tsx
 │   │   ├── index.css
@@ -34,10 +58,7 @@ DataSentinelAI/
 │   ├── tsconfig.json
 │   ├── tsconfig.node.json
 │   └── vite.config.ts
-├── reports/
-│   ├── ai_reasoning.json
-│   ├── analysis_20261030T105258Z_1c5e721f.json
-│   └── sample_analysis.json
+├── reports/                 # Generated JSON analysis reports
 ├── scripts/
 │   ├── generate_sample_data.py
 │   ├── test_analysis.py

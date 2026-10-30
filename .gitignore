@@ -5,6 +5,8 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage.*
+coverage.xml
 
 # Virtual environments
 .venv/
@@ -25,6 +27,12 @@ ENV/
 # IDE and editor files
 .vscode/
 .idea/
+
+# Node.js and frontend build artifacts
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
 
 # Operating system files
 .DS_Store
