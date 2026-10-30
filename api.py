@@ -17,6 +17,12 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
+from src.agents.reasoning_agent import (
+    AI_PROVIDER,
+    DEFAULT_MODEL,
+    check_ai_health,
+)
+from src.analysis_engine import analyze_datasets as run_deterministic_analysis
 from src.graph.workflow import data_sentinel_workflow
 from src.monitoring.execution import execute_monitored_pipeline
 from src.monitoring.run_manager import (
@@ -25,6 +31,7 @@ from src.monitoring.run_manager import (
     RunNotFoundError,
     TERMINAL_STATUSES,
 )
+from src.protection_gate import evaluate_pipeline_gate
 from src.experiments.lab import (
     SCENARIOS as EXPERIMENT_SCENARIOS,
     ScenarioValidationError,
@@ -44,7 +51,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 REPORTS_DIR = PROJECT_ROOT / "reports"
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
-AI_MODEL = "gemma3:1b"
+AI_MODEL = DEFAULT_MODEL
 MAX_UPLOAD_SIZE_MB = 50
 MAX_UPLOAD_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 PROTECTION_FIXTURE_DIR = (
@@ -896,16 +903,51 @@ def get_pipeline_run_report(run_id: str) -> FileResponse:
 
 @app.get("/api/health")
 def health_check() -> dict[str, Any]:
-    """Return API and model configuration information."""
+    """Verify the API and deterministic analysis engine using synthetic data."""
+
+    analysis_engine_status = "available"
+    try:
+        health_frame = pd.DataFrame(
+            {
+                "health_check_value": range(20),
+                "health_check_category": [
+                    "A" if index % 2 else "B"
+                    for index in range(20)
+                ],
+            }
+        )
+        analysis = run_deterministic_analysis(
+            baseline=health_frame,
+            current=health_frame.copy(deep=True),
+        )
+        protection = evaluate_pipeline_gate(analysis)
+        if protection.get("decision") != "ALLOW":
+            raise RuntimeError("The synthetic healthy health-check did not ALLOW.")
+    except Exception as exc:
+        logger.exception("Deterministic analysis health check failed.")
+        analysis_engine_status = "unavailable"
+        analysis_error = type(exc).__name__
+    else:
+        analysis_error = None
 
     return {
         "status": "online",
         "service": "DataSentinel AI",
         "version": "1.0.0",
         "configured_ai_model": AI_MODEL,
+        "ai_provider": AI_PROVIDER,
         "analysis_engine": "Python",
+        "analysis_engine_status": analysis_engine_status,
+        "analysis_engine_error": analysis_error,
         "workflow_engine": "LangGraph",
     }
+
+
+@app.get("/api/health/ai")
+def ai_health_check() -> dict[str, Any]:
+    """Report actual local Ollama reachability, model, and inference status."""
+
+    return check_ai_health()
 
 
 @app.post("/api/analyze")
@@ -916,8 +958,8 @@ async def analyze_datasets(
     """
     Analyze uploaded baseline and current CSV files.
 
-    Python performs the actual analysis. Gemma provides explanations
-    through the existing LangGraph workflow.
+    Python performs analysis and evaluates protection before optional
+    Gemma reasoning through the existing LangGraph workflow.
     """
 
     for upload in (baseline_file, current_file):

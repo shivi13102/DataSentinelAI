@@ -87,7 +87,9 @@ def generate_reasoning(state: DataSentinelState) -> dict[str, Any]:
             "reasoning_results": {
                 "status": "error",
                 "error": (
-                    "AI reasoning failed; results are unavailable "
+                    "Local AI investigation is currently unavailable. "
+                    "Deterministic data-quality analysis and pipeline "
+                    "protection are operating normally. AI reasoning failed "
                     f"({type(exc).__name__})."
                 ),
             }
@@ -225,9 +227,9 @@ def build_workflow():
     graph.add_node("build_report", build_report)
 
     graph.add_edge(START, "analyze_data")
-    graph.add_edge("analyze_data", "generate_reasoning")
-    graph.add_edge("generate_reasoning", "protect_pipeline")
-    graph.add_edge("protect_pipeline", "build_report")
+    graph.add_edge("analyze_data", "protect_pipeline")
+    graph.add_edge("protect_pipeline", "generate_reasoning")
+    graph.add_edge("generate_reasoning", "build_report")
     graph.add_edge("build_report", END)
 
     return graph.compile()

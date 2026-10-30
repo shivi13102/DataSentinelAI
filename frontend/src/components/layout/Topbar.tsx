@@ -3,11 +3,12 @@
 // ============================================================
 
 import { useContext } from 'react';
-import { Plus, RefreshCw, Wifi, WifiOff, Loader } from 'lucide-react';
+import { Plus, RefreshCw, Wifi, WifiOff, Loader, Cpu, HardDrive } from 'lucide-react';
 import { AppContext } from '../../App';
 import type { Page } from '../../App';
 import { Button } from '../ui/Button';
 import { cn } from '../../lib/utils';
+import { getApiBaseUrl } from '../../lib/api';
 
 const PAGE_LABELS: Record<Page, { title: string; breadcrumb: string[] }> = {
   overview:      { title: 'Overview',           breadcrumb: ['DataSentinel AI', 'Overview'] },
@@ -26,7 +27,14 @@ interface TopbarProps {
 }
 
 export function Topbar({ onRefresh, refreshing = false }: TopbarProps) {
-  const { currentPage, navigate, backendStatus, latestReport } = useContext(AppContext);
+  const {
+    currentPage,
+    navigate,
+    backendStatus,
+    healthData,
+    latestReport,
+    aiHealth,
+  } = useContext(AppContext);
   const meta = PAGE_LABELS[currentPage];
 
   return (
@@ -67,6 +75,15 @@ export function Topbar({ onRefresh, refreshing = false }: TopbarProps) {
       <div className="ml-auto flex items-center gap-2">
         {/* Backend status indicator */}
         <BackendIndicator status={backendStatus} />
+        <LocalModeIndicator />
+        <AnalysisIndicator
+          status={healthData?.analysis_engine_status ?? null}
+          engine={healthData?.analysis_engine ?? null}
+        />
+        <AIIndicator
+          status={aiHealth?.status ?? null}
+          model={aiHealth?.model ?? null}
+        />
 
         {/* Refresh */}
         {onRefresh && (
@@ -92,6 +109,103 @@ export function Topbar({ onRefresh, refreshing = false }: TopbarProps) {
         </Button>
       </div>
     </header>
+  );
+}
+
+function AnalysisIndicator({
+  status,
+  engine,
+}: {
+  status: 'available' | 'unavailable' | null;
+  engine: string | null;
+}) {
+  const available = status === 'available';
+  const label = status === null
+    ? 'Analysis Not Checked'
+    : available
+      ? 'Analysis Verified'
+      : 'Analysis Unavailable';
+  const className = available
+    ? 'text-emerald-400 border-emerald-900/50 bg-emerald-950/30'
+    : status === null
+      ? 'text-[#8B9BB4] border-[#223149]'
+      : 'text-red-300 border-red-900/50 bg-red-950/30';
+
+  return (
+    <div
+      className={cn(
+        'hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded border text-[11px] font-medium',
+        className,
+      )}
+      aria-label={`Analysis engine status: ${label}`}
+      title={`${label}${engine ? ` · ${engine}` : ''}. Verified using a generic synthetic dataset and the protection gate.`}
+    >
+      <Cpu className="h-3 w-3" />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function LocalModeIndicator() {
+  let local = false;
+  try {
+    const hostname = new URL(getApiBaseUrl()).hostname;
+    local = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+  } catch {
+    local = false;
+  }
+  if (!local) return null;
+
+  return (
+    <div
+      className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded border text-[11px] font-medium text-cyan-300 border-cyan-900/50 bg-cyan-950/30"
+      title="The configured API is on this machine. Deterministic analysis does not require internet; local AI availability is checked separately."
+      aria-label="Local API mode"
+    >
+      <HardDrive className="h-3 w-3" />
+      <span>Local API</span>
+    </div>
+  );
+}
+
+function AIIndicator({
+  status,
+  model,
+}: {
+  status: string | null;
+  model: string | null;
+}) {
+  const available = status === 'AVAILABLE';
+  const label = status === null
+    ? 'AI Not Checked'
+    : status === 'AVAILABLE'
+      ? 'AI Verified'
+      : status === 'MODEL_NOT_INSTALLED'
+        ? 'Model Missing'
+        : status === 'OLLAMA_UNAVAILABLE'
+          ? 'AI Unavailable'
+          : status === 'NOT_CONFIGURED'
+            ? 'AI Not Configured'
+            : 'AI Inference Failed';
+  const className = available
+    ? 'text-emerald-400 border-emerald-900/50 bg-emerald-950/30'
+    : status === null
+      ? 'text-[#8B9BB4] border-[#223149]'
+      : 'text-amber-300 border-amber-900/50 bg-amber-950/30';
+
+  return (
+    <div
+      className={cn(
+        'hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded border text-[11px] font-medium',
+        className,
+      )}
+      aria-label={`Local AI status: ${label}`}
+      title={`${label}${model ? ` · ${model}` : ''}. AI availability is based on a real local inference check; deterministic analysis and protection do not depend on AI.`}
+    >
+      <Cpu className="h-3 w-3" />
+      <span>{label}</span>
+      {model && <span className="font-mono opacity-80">{model}</span>}
+    </div>
   );
 }
 

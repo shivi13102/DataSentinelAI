@@ -9,8 +9,29 @@ export interface HealthResponse {
   service: string;
   version: string;
   configured_ai_model: string;
+  ai_provider: string;
   analysis_engine: string;
+  analysis_engine_status: 'available' | 'unavailable';
+  analysis_engine_error: string | null;
   workflow_engine: string;
+}
+
+export type AIHealthStatus =
+  | 'AVAILABLE'
+  | 'MODEL_NOT_INSTALLED'
+  | 'OLLAMA_UNAVAILABLE'
+  | 'INFERENCE_FAILED'
+  | 'NOT_CONFIGURED';
+
+export interface AIHealthResponse {
+  provider: string;
+  model: string | null;
+  status: AIHealthStatus;
+  ollama_reachable: boolean;
+  model_installed: boolean;
+  inference_tested: boolean;
+  response_time_ms: number | null;
+  error: string | null;
 }
 
 // ── Finding value shapes ────────────────────────────────────

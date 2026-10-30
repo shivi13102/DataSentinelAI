@@ -1,8 +1,10 @@
 import json
+from io import StringIO
 from pathlib import Path
 import threading
 import time
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
@@ -76,6 +78,62 @@ def test_upload_runs_real_analysis_gate_and_persists_report(
     assert downloaded.json() == report
 
 
+@pytest.mark.parametrize(
+    ("scenario", "expected_decision"),
+    [
+        ("healthy", "ALLOW"),
+        ("missing_values", "REVIEW_REQUIRED"),
+        ("schema_change", "BLOCK"),
+    ],
+)
+def test_generic_csv_upload_uses_dynamic_schema_and_real_gate(
+    client,
+    scenario,
+    expected_decision,
+):
+    baseline = pd.DataFrame(
+        {
+            "sensor_key": range(100),
+            "measurement_reading": [index % 10 for index in range(100)],
+            "category_token": [
+                "north" if index % 2 else "south"
+                for index in range(100)
+            ],
+        }
+    )
+    current = baseline.copy(deep=True)
+    if scenario == "missing_values":
+        current.loc[:19, "measurement_reading"] = float("nan")
+    elif scenario == "schema_change":
+        current = current.drop(columns=["measurement_reading"])
+
+    def csv_bytes(frame):
+        output = StringIO()
+        frame.to_csv(output, index=False)
+        return output.getvalue().encode("utf-8")
+
+    response = client.post(
+        "/api/analyze",
+        files={
+            "baseline_file": ("generic_reference.csv", csv_bytes(baseline), "text/csv"),
+            "current_file": ("generic_daily.csv", csv_bytes(current), "text/csv"),
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["protection"]["decision"] == expected_decision
+    assert result["protection"]["downstream_processing_allowed"] is (
+        expected_decision == "ALLOW"
+    )
+    assert result["dataset_metadata"]["baseline"]["columns"] == 3
+    if scenario == "healthy":
+        assert result["analysis"]["findings"] == []
+    else:
+        assert result["analysis"]["findings"]
+    assert client.get(f"/api/reports/{result['report_id']}").json() == result
+
+
 def test_invalid_file_type_is_rejected(client):
     response = client.post(
         "/api/analyze",
@@ -136,6 +194,56 @@ def test_report_id_validation_and_missing_report(client):
 
     assert invalid.status_code == 404 or invalid.status_code == 400
     assert missing.status_code == 404
+
+
+def test_ai_health_endpoint_returns_actual_status_without_exposing_configuration(
+    client,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        api,
+        "check_ai_health",
+        lambda: {
+            "provider": "ollama",
+            "model": "gemma3:1b",
+            "status": "MODEL_NOT_INSTALLED",
+            "ollama_reachable": True,
+            "model_installed": False,
+            "inference_tested": False,
+            "response_time_ms": 8.5,
+            "error": "Install the configured model manually.",
+        },
+    )
+
+    response = client.get("/api/health/ai")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["status"] == "MODEL_NOT_INSTALLED"
+    assert result["inference_tested"] is False
+    assert "secret" not in response.text.lower()
+
+
+def test_system_health_checks_analysis_engine_with_synthetic_data(
+    client,
+    monkeypatch,
+):
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    assert response.json()["analysis_engine_status"] == "available"
+    assert response.json()["analysis_engine_error"] is None
+
+    def fail_health_analysis(**_kwargs):
+        raise RuntimeError("private failure detail")
+
+    monkeypatch.setattr(api, "run_deterministic_analysis", fail_health_analysis)
+    degraded = client.get("/api/health")
+
+    assert degraded.status_code == 200
+    assert degraded.json()["status"] == "online"
+    assert degraded.json()["analysis_engine_status"] == "unavailable"
+    assert degraded.json()["analysis_engine_error"] == "RuntimeError"
+    assert "private failure detail" not in degraded.text
 
 
 def test_analysis_exception_returns_an_explicit_blocked_report(client, monkeypatch):

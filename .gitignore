@@ -58,6 +58,18 @@ htmlcov/
 # Generated analysis reports
 reports/
 
+# Local demo processes, private demonstration data, and model caches
+.demo-runtime/
+.demo-private/
+private-demo-data/
+demo-private-data/
+demo_data_private/
+historical_batches/
+orders_reference.csv
+orders_daily_*.csv
+.ollama/
+ollama_models/
+
 # Streamlit secrets
 .streamlit/secrets.toml
 

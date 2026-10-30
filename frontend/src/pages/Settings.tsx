@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   RotateCcw,
   Save,
+  RefreshCw,
   Globe,
   ShieldCheck,
   Info,
@@ -22,14 +23,16 @@ import {
   getApiBaseUrl,
   setApiBaseUrl,
   DEFAULT_BASE_URL,
+  checkAIHealth,
   checkHealth,
 } from '../lib/api';
 
 export function SettingsPage() {
-  const { backendStatus, healthData, toast } = useContext(AppContext);
+  const { backendStatus, healthData, aiHealth, setAIHealth, toast } = useContext(AppContext);
 
   const [apiUrl, setApiUrl] = useState(getApiBaseUrl());
   const [testingConnection, setTestingConnection] = useState(false);
+  const [checkingAI, setCheckingAI] = useState(false);
   const [testResult, setTestResult] = useState<{
     ok: boolean;
     message: string;
@@ -74,6 +77,26 @@ export function SettingsPage() {
     setApiBaseUrl(DEFAULT_BASE_URL);
     setTestResult(null);
     toast('API URL reset to default', 'info');
+  }
+
+  async function handleCheckAI() {
+    setCheckingAI(true);
+    try {
+      const result = await checkAIHealth();
+      setAIHealth(result);
+      toast(
+        result.status === 'AVAILABLE'
+          ? 'Local AI inference verified'
+          : `Local AI status: ${result.status}`,
+        result.status === 'AVAILABLE' ? 'success' : 'info',
+      );
+    } catch (err: unknown) {
+      setAIHealth(null);
+      const message = err instanceof Error ? err.message : 'AI health check failed';
+      toast(message, 'error');
+    } finally {
+      setCheckingAI(false);
+    }
   }
 
   return (
@@ -183,6 +206,18 @@ export function SettingsPage() {
               <p className="text-sm font-semibold text-[#E5EDF9]">
                 {healthData?.analysis_engine ?? 'Python & Pandas (Deterministic)'}
               </p>
+              <Badge
+                variant={
+                  healthData?.analysis_engine_status === 'available'
+                    ? 'success'
+                    : healthData?.analysis_engine_status === 'unavailable'
+                      ? 'critical'
+                      : 'neutral'
+                }
+                size="sm"
+              >
+                {healthData?.analysis_engine_status?.toUpperCase() ?? 'NOT CHECKED'}
+              </Badge>
               <p className="text-xs text-[#8B9BB4]">
                 Executes Kolmogorov-Smirnov, Chi-square, and null-rate detectors in-memory.
               </p>
@@ -208,11 +243,34 @@ export function SettingsPage() {
                 <p className="text-sm font-semibold text-[#22D3EE] font-mono">
                   {healthData?.configured_ai_model ?? 'gemma3:1b'}
                 </p>
-                <Badge variant="info" size="sm">Ollama Local</Badge>
+                <Badge
+                  variant={
+                    aiHealth?.status === 'AVAILABLE'
+                      ? 'success'
+                      : aiHealth
+                        ? 'warning'
+                        : 'neutral'
+                  }
+                  size="sm"
+                >
+                  {aiHealth?.status ?? 'NOT CHECKED'}
+                </Badge>
               </div>
               <p className="text-xs text-[#8B9BB4]">
-                Local LLM instance queried with structured JSON schemas.
+                {aiHealth?.error ??
+                  (aiHealth?.response_time_ms !== null && aiHealth?.response_time_ms !== undefined
+                    ? `Verified by local inference in ${aiHealth.response_time_ms} ms.`
+                    : 'Runtime availability is unknown until local inference is tested.')}
               </p>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void handleCheckAI()}
+                loading={checkingAI}
+                icon={<RefreshCw className="h-3 w-3" />}
+              >
+                Test local inference
+              </Button>
             </div>
 
             <div className="rounded-lg bg-[#142036] border border-[#223149] p-4 space-y-1">
@@ -232,10 +290,8 @@ export function SettingsPage() {
             <Info className="h-4 w-4 text-[#22D3EE] shrink-0 mt-0.5" />
             <div>
               <span className="text-[#E5EDF9] font-medium">Model Availability Distinction:</span>{' '}
-              The <span className="font-mono text-[#22D3EE]">{healthData?.configured_ai_model ?? 'gemma3:1b'}</span>{' '}
-              designation confirms the model configured on the backend. True runtime availability depends on
-              the Ollama daemon being active at <span className="font-mono text-[#60A5FA]">http://localhost:11434</span>.
-              If Ollama is stopped, the pipeline preserves all deterministic Python findings and records an AI status notice.
+              Model availability is shown only after a real inference check against the configured local Ollama service.
+              If it is unavailable, deterministic analysis and protection continue; no AI explanation is fabricated.
             </div>
           </div>
         </CardBody>

@@ -144,8 +144,9 @@ export function DatasetAnalysis() {
               <span className="text-[#E5EDF9] font-medium">Current</span> — the new dataset you want to investigate for anomalies.
             </p>
             <p>
-              Python detectors run first. Gemma generates an AI investigation once analysis completes.
-              Only CSV files are supported. With the default local backend, files stay on this machine.
+              Python detectors and the protection gate are authoritative. Local Gemma reasoning is optional;
+              if it is unavailable, the deterministic findings and decision remain available. Only CSV files
+              are supported. With the default local backend, files stay on this machine.
             </p>
           </div>
         </CardBody>

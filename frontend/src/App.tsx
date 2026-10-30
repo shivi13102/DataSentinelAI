@@ -11,8 +11,13 @@
 import { createContext, useCallback, useEffect, useRef, useState } from 'react';
 import './App.css';
 
-import type { AnalysisReport, HealthResponse, ReportSummary } from './types/api';
-import { checkHealth, fetchReport, fetchReports } from './lib/api';
+import type {
+  AIHealthResponse,
+  AnalysisReport,
+  HealthResponse,
+  ReportSummary,
+} from './types/api';
+import { checkAIHealth, checkHealth, fetchReport, fetchReports } from './lib/api';
 
 import { Sidebar } from './components/layout/Sidebar';
 import { Topbar } from './components/layout/Topbar';
@@ -51,6 +56,8 @@ export interface AppContextValue {
   refreshReports: () => Promise<ReportSummary[]>;
   backendStatus: 'checking' | 'online' | 'offline';
   healthData: HealthResponse | null;
+  aiHealth: AIHealthResponse | null;
+  setAIHealth: (health: AIHealthResponse | null) => void;
   toast: (message: string, type?: Toast['type']) => void;
 }
 
@@ -63,6 +70,8 @@ export const AppContext = createContext<AppContextValue>({
   refreshReports: async () => [],
   backendStatus: 'checking',
   healthData: null,
+  aiHealth: null,
+  setAIHealth: () => {},
   toast: () => {},
 });
 
@@ -75,6 +84,7 @@ export default function App() {
   const [reports, setReports] = useState<ReportSummary[]>([]);
   const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking');
   const [healthData, setHealthData] = useState<HealthResponse | null>(null);
+  const [aiHealth, setAIHealth] = useState<AIHealthResponse | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const bootstrapped = useRef(false);
@@ -112,6 +122,7 @@ export default function App() {
         const health = await checkHealth();
         setHealthData(health);
         setBackendStatus('online');
+        void checkAIHealth().then(setAIHealth).catch(() => setAIHealth(null));
       } catch {
         setBackendStatus('offline');
         // Continue: still fetch local reports cache if any
@@ -158,6 +169,11 @@ export default function App() {
       const health = await checkHealth();
       setHealthData(health);
       setBackendStatus('online');
+      try {
+        setAIHealth(await checkAIHealth());
+      } catch {
+        setAIHealth(null);
+      }
     } catch {
       setBackendStatus('offline');
     }
@@ -184,6 +200,8 @@ export default function App() {
     refreshReports,
     backendStatus,
     healthData,
+    aiHealth,
+    setAIHealth,
     toast,
   };
 

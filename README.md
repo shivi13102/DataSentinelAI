@@ -33,7 +33,7 @@ A pipeline can execute with exit code `0` (Success) while the **data itself is s
 | Stage | Mechanism | Responsibility |
 | :--- | :--- | :--- |
 | **1. Detect** | Python & SciPy | Calculates distribution statistics, p-values, missingness changes, duplicate-row rates, categorical drift, and schema differences. The LLM does not calculate measured values. |
-| **2. Investigate** | LangGraph StateGraph | Orchestrates workflow state across data profiling, anomaly detection, AI investigation, and gate evaluation nodes. |
+| **2. Investigate** | Python API and workflow | The monitored-run path explicitly sequences analysis, gate evaluation, optional AI reasoning, and conditional downstream execution. The separate report workflow also uses LangGraph. |
 | **3. Explain** | Gemma 3 1B (via Ollama) | Analyzes measured facts to formulate unverified root-cause hypotheses, assess business impacts, and recommend verification checklists in plain language. |
 | **4. Protect** | Deterministic Safety Gate | Authoritative gate evaluates finding severities. If critical risks are detected, it issues a **BLOCK** decision that **cannot be overridden by the LLM**. |
 
@@ -41,43 +41,174 @@ A pipeline can execute with exit code `0` (Success) while the **data itself is s
 
 ## 3. Architecture & Data Flow
 
+```mermaid
+flowchart TD
+    subgraph presentation["1. Presentation layer"]
+        user["Operator"]
+        ui["React + TypeScript frontend<br/>Dataset Analysis · Pipeline Monitor · Experiment Lab · Reports"]
+    end
+
+    subgraph api["2. FastAPI layer"]
+        upload["CSV upload / analysis API"]
+        monitored["Monitored-run API<br/>create · snapshot · history · SSE · report"]
+        experiment["Experiment API<br/>create · inspect · correct · verify"]
+    end
+
+    subgraph uploadFlow["3. Existing upload-report workflow"]
+        legacyGraph["LangGraph report workflow<br/>analyze → protection gate → optional AI reasoning → report"]
+    end
+
+    subgraph runtime["4. Monitored analysis and execution layer"]
+        manager["RunManager<br/>bounded in-process registry + worker pool"]
+        loader["CSV loader and input validation"]
+        engine["Deterministic analysis engine"]
+        subgraph detectors["Detector branches"]
+            schema["Schema changes"]
+            missing["Missing-value changes"]
+            duplicates["Duplicate rows"]
+            numeric["Numeric distribution drift"]
+            categorical["Categorical drift"]
+        end
+        aggregate["Findings and severity aggregation"]
+        gate["Protection gate<br/>authoritative decision"]
+        subgraph outcomes["Conditional protection outcomes"]
+            outcome{"Gate outcome"}
+            review["REVIEW_REQUIRED<br/>withhold downstream"]
+            block["BLOCK / invalid gate result<br/>withhold downstream"]
+            downstream["Simulated downstream operation"]
+        end
+        stageFailure["Loader or pipeline stage failure<br/>mark run failed; never authorize"]
+        ai["Optional Gemma reasoning via local Ollama<br/>advisory explanation only"]
+        aiFallback["AI unavailable/error<br/>record status; retain gate result"]
+        report["Report generation"]
+    end
+
+    subgraph experimentflow["5. Experiment Lab flow"]
+        sourceCopy["Isolated source dataset copy"]
+        injection["Controlled anomaly injection<br/>six supported scenarios"]
+        injectedCopy["Injected dataset copy"]
+        recovery["Controlled correction"]
+        recoveredCopy["Recovered dataset copy"]
+        verification["Targeted recovery verification<br/>re-run real detectors and gate"]
+    end
+
+    subgraph persistence["6. Local persistence and event delivery"]
+        runState[("Run snapshots and recent events<br/>in-memory; bounded; single process")]
+        sse["Ordered events / SSE stream"]
+        reports[("JSON report files<br/>reports/")]
+        expDb[("Experiment metadata + event ledger<br/>SQLite under reports/")]
+        expFiles[("Experiment source / injected / recovered CSVs<br/>reports/experiments/")]
+    end
+
+    subgraph ci["7. CI / demo execution"]
+        gha["GitHub Actions<br/>Python tests + frontend build"]
+        pytests["pytest suite"]
+        frontendBuild["Frontend production build"]
+        jenkins["Jenkins pipeline"]
+        cli["Deterministic CLI runner<br/>scripts/run_pipeline.py"]
+        cliAnalysis["CLI analysis + gate"]
+        decision{"Build-specific decision<br/>is exact ALLOW?"}
+        jDownstream["Simulated Jenkins step<br/>runs only for ALLOW"]
+    end
+
+    user --> ui
+    ui --> upload
+    ui --> monitored
+    ui --> experiment
+    upload --> legacyGraph
+    legacyGraph --> reports
+    monitored --> manager
+    manager --> loader
+    loader --> engine
+    engine --> schema
+    engine --> missing
+    engine --> duplicates
+    engine --> numeric
+    engine --> categorical
+    schema --> aggregate
+    missing --> aggregate
+    duplicates --> aggregate
+    numeric --> aggregate
+    categorical --> aggregate
+    aggregate --> gate
+    gate --> outcome
+    outcome -->|ALLOW| downstream
+    outcome -->|REVIEW_REQUIRED| review
+    outcome -->|BLOCK / invalid| block
+    loader -. "stage error" .-> stageFailure
+    engine -. "analysis error" .-> stageFailure
+    gate -->|after deterministic decision| ai
+    ai --> report
+    ai -. "service/model error" .-> aiFallback
+    aiFallback --> report
+    downstream --> report
+    review --> report
+    block --> report
+    report --> reports
+    manager --> runState
+    stageFailure --> runState
+    manager --> sse
+    sse --> ui
+    runState --> ui
+    reports --> ui
+
+    experiment --> sourceCopy
+    sourceCopy --> injection
+    injection --> injectedCopy
+    injectedCopy --> monitored
+    injectedCopy --> expFiles
+    experiment --> expDb
+    recovery --> recoveredCopy
+    injectedCopy --> recovery
+    recoveredCopy --> verification
+    verification --> monitored
+    recoveredCopy --> expFiles
+    verification --> expDb
+
+    gha --> pytests
+    gha --> frontendBuild
+    pytests --> engine
+    frontendBuild --> ui
+    jenkins --> cli
+    cli --> cliAnalysis
+    cliAnalysis --> decision
+    decision -->|yes| jDownstream
+
+    classDef authoritative fill:#d1fae5,stroke:#059669,color:#064e3b;
+    classDef conditional fill:#fef3c7,stroke:#d97706,color:#78350f;
+    classDef optional fill:#ede9fe,stroke:#7c3aed,color:#4c1d95;
+    classDef persistenceClass fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e;
+    class gate,outcome authoritative;
+    class review,block,downstream,jDownstream conditional;
+    class ai,aiFallback optional;
+    class runState,reports,expDb,expFiles persistenceClass;
 ```
-[ Trusted Baseline CSV ]    [ Incoming Current CSV ]
-            │                          │
-            └───────────┬──────────────┘
-                        ▼
-       ┌─────────────────────────────────┐
-       │   1. Data Validation Engine     │
-       │   (SciPy, NumPy, Pandas)        │
-       │   • Kolmogorov-Smirnov Test     │
-       │   • Chi-Square & TVD Drift      │
-       │   • Null Invariant Deltas       │
-       │   • Duplicate-Row Rates         │
-       └────────────────┬────────────────┘
-                        │ Structured Facts
-                        ▼
-       ┌─────────────────────────────────┐
-       │   2. LangGraph Workflow Graph   │
-       │   (DataSentinelState Orchestr.) │
-       └────────┬───────────────┬────────┘
-                │               │
-  Evidence Dict │               │ Analysis Results
-                ▼               ▼
- ┌──────────────────────┐  ┌──────────────────────┐
- │  3. Reasoning Agent  │  │ 4. Protection Gate   │
- │  Gemma 3 1B (Ollama) │  │ Deterministic Rules  │
- │  • Root Hypotheses   │  │ • ALLOW              │
- │  • Business Impact   │  │ • REVIEW_REQUIRED    │
- │  • Remediation Steps │  │ • BLOCK              │
- └──────────────┬───────┘  └──────────┬───────────┘
-                │                     │ (Authoritative)
-                └──────────┬──────────┘
-                           ▼
-             ┌───────────────────────────┐
-             │   5. Unified JSON Audit   │
-             │   & Observability UI      │
-             └───────────────────────────┘
-```
+
+### Runtime and branch semantics
+
+- The monitored execution path loads both CSVs, runs the deterministic
+  detectors, evaluates the protection gate, optionally requests an AI
+  explanation, and then invokes simulated downstream processing only for a
+  consistent `ALLOW`. `REVIEW_REQUIRED`, `BLOCK`, invalid decisions, and
+  failed analysis do not authorize downstream work.
+- The AI path is advisory. If Ollama/Gemma is unavailable or errors, that
+  status is recorded; the deterministic gate remains authoritative.
+- The detector fan-out and frontend branches describe logical dependencies
+  and displayed stages. They do **not** assert parallel detector execution or
+  a production downstream integration. The upload-report API and monitored-run
+  API are distinct paths: the former invokes the LangGraph report workflow,
+  while the latter uses the instrumented run manager and conditional simulated
+  downstream stage.
+- Run snapshots and event history are bounded in-memory state in a
+  single-process manager. Reports are local JSON files. Experiment metadata
+  and its append-only event ledger use SQLite, while isolated CSV versions are
+  stored under `reports/experiments/`.
+- The Experiment Lab modifies isolated copies, uses the same monitored
+  analysis/gate behavior, and verifies a targeted recovery by rerunning the
+  actual detectors. It is not a general lineage or governed-baseline service.
+- The CI portion is separate from the live API runtime. GitHub Actions runs
+  tests/build; Jenkins uses the CLI decision artifact and only executes its
+  simulated downstream stage for `ALLOW`.
 
 ### Why Deterministic Gating Over Pure LLMs?
 LLMs are creative reasoners, but they can hallucinate or downplay statistical severity. In DataSentinel AI:
@@ -160,11 +291,24 @@ DataSentinelAI/
 ├── .gitignore
 ├── .github/
 │   └── workflows/                         # Python tests and frontend build
+├── AI_CONFIGURATION.md                    # Local Ollama/Gemma configuration
+├── DEMO_READINESS.md                      # Audit and verified readiness record
+├── DEMO_RUNBOOK.md                        # PowerShell demo sequence
+├── OFFLINE_SETUP.md                       # Local/offline setup notes
+├── PPT.md                                  # Text transcript of the 9-slide deck
 ├── data/
 │   ├── processed/
 │   └── raw/
 │       ├── baseline.csv                     # Trusted reference dataset
 │       └── current.csv                      # Investigated incoming dataset
+├── docs/                                    # Phase 4 demo and readiness materials
+│   ├── AI_FALLBACK_AND_TROUBLESHOOTING.md
+│   ├── DataSentinelAI_Demo.pptx             # 9-slide presentation
+│   ├── JUDGE_QA.md
+│   ├── PHASE4_DEMO_RUNBOOK.md
+│   ├── PHASE4_READINESS_CHECKLIST.md
+│   ├── PHASE4_VALIDATION.md
+│   └── TECHNICAL_ARCHITECTURE.md
 ├── frontend/                                # Enterprise React + TypeScript UI
 │   ├── public/
 │   │   ├── favicon.svg
@@ -200,10 +344,14 @@ DataSentinelAI/
 │   └── vite.config.ts
 ├── reports/                                 # Reports plus ignored local experiment DB/data
 ├── scripts/
+│   ├── create_phase4_presentation.ps1       # Windows PowerPoint deck generator
 │   ├── demo_monitored_pipeline.py           # SDK fixture demonstration
+│   ├── demo_preflight.py                   # Local readiness checks
 │   ├── evaluate_protection.py               # Metrics and evaluation reports
 │   ├── generate_protection_fixtures.py      # Deterministic scenario generator
-│   └── run_pipeline.py                      # CLI analysis and run artifacts
+│   ├── run_pipeline.py                      # CLI analysis and run artifacts
+│   ├── start_demo.ps1                       # Start only missing localhost services
+│   └── stop_demo.ps1                        # Stop only processes started by demo
 ├── src/
 │   ├── agents/
 │   │   └── reasoning_agent.py               # Gemma 3 1B structured Ollama client
@@ -230,6 +378,7 @@ DataSentinelAI/
 ├── tests/
 │   ├── fixtures/protection/                 # Scenario CSV pairs and manifest
 │   ├── test_api.py
+│   ├── test_ai_health.py                    # Ollama availability and inference health
 │   ├── test_evaluation.py
 │   ├── test_experiments.py                  # Real detector/recovery/API tests
 │   ├── test_monitoring.py                   # SDK and event lifecycle tests
@@ -249,11 +398,12 @@ DataSentinelAI/
 
 ### Prerequisites
 - Python 3.11+
-- Node.js 18+ & npm
+- Node.js 20.19+ or 22.12+ & npm (Vite 8 requirement)
 - (Optional) [Ollama](https://ollama.com/) with `gemma3:1b` for local AI reasoning:
   ```bash
   ollama pull gemma3:1b
   ```
+  Pull the model before going offline; application startup never downloads it.
 
 ---
 
@@ -269,6 +419,15 @@ pip install -r requirements.txt
 
 # Run FastAPI server
 uvicorn api:app --host 127.0.0.1 --port 8000 --reload
+```
+
+For the Windows demo, run these from the repository root to check
+dependencies/ports, start only missing services, and stop only processes
+started by the demo:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start_demo.ps1
+powershell -ExecutionPolicy Bypass -File scripts\stop_demo.ps1
 ```
 
 Backend will be online at: `http://127.0.0.1:8000`  
@@ -545,7 +704,8 @@ unchanged.
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
 | `/api/health` | `GET` | Returns service status, version, configured AI model, and engine metadata. |
-| `/api/analyze` | `POST` | Accepts multipart form data (`baseline_file`, `current_file`), each limited to 50 MiB. Runs detection, optional reasoning, gating, and report persistence. |
+| `/api/health/ai` | `GET` | Checks local Ollama reachability, exact configured model installation, and a real bounded inference request. |
+| `/api/analyze` | `POST` | Accepts multipart form data (`baseline_file`, `current_file`), each limited to 50 MiB. Runs deterministic detection and gating before optional reasoning and report persistence. |
 | `/api/reports` | `GET` | Lists all saved analysis reports in reverse chronological order. |
 | `/api/reports/{id}` | `GET` | Downloads a saved JSON report using a generated report ID. |
 | `/api/pipeline-runs` and `/api/pipeline-runs/{run_id}...` | `POST` / `GET` | Live monitored execution, run state, retained event history, SSE events, and final report; see the Live Monitoring section for exact shapes. |
@@ -589,3 +749,28 @@ file at enforcement rather than trusting an environment-variable value.
 ## 15. License
 
 This project is licensed under the Apache 2.0 License.
+
+## 16. Phase 4 Demo Materials
+
+The Phase 4 package documents the current implementation and demo workflow:
+
+- [Demo readiness audit](DEMO_READINESS.md), [offline setup](OFFLINE_SETUP.md),
+  [AI configuration](AI_CONFIGURATION.md), and [demo runbook](DEMO_RUNBOOK.md).
+- Run `.\.venv\Scripts\python.exe scripts\demo_preflight.py` before the event
+  for local readiness checks using independent synthetic fixtures.
+- [Demo runbook](docs/PHASE4_DEMO_RUNBOOK.md): local setup, talk track,
+  reproducible fixtures, and cautious reset/data-handling guidance.
+- [Technical architecture and status](docs/TECHNICAL_ARCHITECTURE.md):
+  implemented flows, state boundaries, and missing capabilities.
+- [Judge Q&A](docs/JUDGE_QA.md) and
+  [AI fallback/troubleshooting](docs/AI_FALLBACK_AND_TROUBLESHOOTING.md).
+- [Readiness checklist](docs/PHASE4_READINESS_CHECKLIST.md) and
+  [validation record](docs/PHASE4_VALIDATION.md).
+- [Presentation](docs/DataSentinelAI_Demo.pptx).
+- [Presentation text](PPT.md).
+
+This package does not claim that the unimplemented Phase 3 lineage,
+baseline-governance, investigation-graph, approval/release, or durable incident
+history features exist. Jenkins and hosted GitHub Actions must be verified in
+their respective services; local validation is not a substitute for those
+runs.

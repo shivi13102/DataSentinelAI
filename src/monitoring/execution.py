@@ -63,8 +63,9 @@ def execute_monitored_pipeline(
             reasoning = {
                 "status": "error",
                 "error": (
-                    "AI investigation failed; deterministic analysis and "
-                    "protection results remain authoritative."
+                    "Local AI investigation is currently unavailable. "
+                    "Deterministic data-quality analysis and pipeline "
+                    "protection are operating normally."
                 ),
             }
 

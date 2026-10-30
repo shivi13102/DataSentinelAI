@@ -7,6 +7,7 @@
 
 import type {
   HealthResponse,
+  AIHealthResponse,
   AnalysisReport,
   ReportsResponse,
   PipelineEvent,
@@ -56,6 +57,11 @@ async function handleResponse<T>(res: Response): Promise<T> {
 export async function checkHealth(): Promise<HealthResponse> {
   const res = await fetch(`${getApiBaseUrl()}/api/health`);
   return handleResponse<HealthResponse>(res);
+}
+
+export async function checkAIHealth(): Promise<AIHealthResponse> {
+  const res = await fetch(`${getApiBaseUrl()}/api/health/ai`);
+  return handleResponse<AIHealthResponse>(res);
 }
 
 /**
