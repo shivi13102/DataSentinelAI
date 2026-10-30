@@ -18,3 +18,8 @@ langgraph>=0.2
 
 # --- Testing ---
 pytest>=8.0
+
+# --- frontend ---
+fastapi
+uvicorn
+python-multipart
