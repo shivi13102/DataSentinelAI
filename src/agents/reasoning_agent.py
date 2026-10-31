@@ -14,11 +14,11 @@ OLLAMA_BASE_URL = os.environ.get(
     "DATASENTINEL_OLLAMA_URL",
     "http://127.0.0.1:11434",
 ).rstrip("/")
-DEFAULT_MODEL = os.environ.get("DATASENTINEL_AI_MODEL", "gemma3:1b").strip()
+DEFAULT_MODEL = os.environ.get("DATASENTINEL_AI_MODEL", "gemma4:e2b").strip()
 try:
     DEFAULT_TIMEOUT = max(
         1,
-        int(os.environ.get("DATASENTINEL_AI_TIMEOUT_SECONDS", "45")),
+        int(os.environ.get("DATASENTINEL_AI_TIMEOUT_SECONDS", "120")),
     )
 except ValueError as exc:
     raise ValueError(
@@ -26,7 +26,7 @@ except ValueError as exc:
     ) from exc
 OLLAMA_API_URL = urljoin(f"{OLLAMA_BASE_URL}/", "api/generate")
 OLLAMA_TAGS_URL = urljoin(f"{OLLAMA_BASE_URL}/", "api/tags")
-HEALTH_TIMEOUT_SECONDS = min(DEFAULT_TIMEOUT, 30)
+HEALTH_TIMEOUT_SECONDS = min(DEFAULT_TIMEOUT, 120)
 MAX_OUTPUT_TOKENS = 1200
 AI_UNAVAILABLE_PREFIX = (
     "Local AI investigation is currently unavailable. Deterministic "

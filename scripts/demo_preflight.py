@@ -420,7 +420,7 @@ def main() -> int:
     check(
         "Local Ollama and actual inference",
         _ai_health,
-        suggestion="Start Ollama locally, run ollama pull gemma3:1b manually if needed, then rerun.",
+        suggestion="Start Ollama locally, run ollama pull gemma4:e2b manually if needed, then rerun.",
         core=False,
     )
     check(

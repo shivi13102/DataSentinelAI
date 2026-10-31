@@ -73,7 +73,7 @@ def test_real_findings_are_sent_as_untrusted_evidence(monkeypatch):
     result = explain_findings(analysis)
 
     assert result["status"] == "success"
-    assert result["model"] == "gemma3:1b"
+    assert result["model"] == "gemma4:e2b"
     assert result["duration_seconds"] >= 0
     assert result["explanation"]["root_cause_hypotheses"][0][
         "supporting_evidence"

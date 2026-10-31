@@ -37,7 +37,7 @@ Install Ollama separately if needed, then pull the configured model while
 internet is available:
 
 ```powershell
-ollama pull gemma3:1b
+ollama pull gemma4:e2b
 ollama list
 ```
 
@@ -46,9 +46,9 @@ the app:
 
 ```powershell
 $env:DATASENTINEL_AI_PROVIDER = 'ollama'
-$env:DATASENTINEL_AI_MODEL = 'gemma3:1b'
+$env:DATASENTINEL_AI_MODEL = 'gemma4:e2b'
 $env:DATASENTINEL_OLLAMA_URL = 'http://127.0.0.1:11434'
-$env:DATASENTINEL_AI_TIMEOUT_SECONDS = '45'
+$env:DATASENTINEL_AI_TIMEOUT_SECONDS = '120'
 ```
 
 The model, URL, and timeout have defaults; do not set a cloud provider for the
@@ -68,4 +68,3 @@ deterministic pipeline remains functional.
 The frontend's default API URL is `http://127.0.0.1:8000`; the UI is served at
 `http://127.0.0.1:5173`. Both services should run on the demo laptop. Do not
 use a CDN, remote font, or hosted model as a demo prerequisite.
-

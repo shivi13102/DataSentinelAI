@@ -11,7 +11,7 @@ approval.
 Optional local setup:
 
 ```powershell
-ollama pull gemma3:1b
+ollama pull gemma4:e2b
 ollama serve
 ```
 
@@ -27,9 +27,9 @@ error/skipped status.
 | Frontend dependency resolution failure | From `frontend`, run `npm ci` to install the lockfile's dependencies, then restart Vite. |
 | A fixture scenario is unknown | Use one of the checked-in IDs in `tests/fixtures/protection/evaluation_manifest.json`. |
 | `REVIEW_REQUIRED`/`BLOCK` is not green in Jenkins | This is an intentional protection outcome: tests/analysis may pass while Jenkins is marked unstable and downstream is withheld. |
-| AI investigation fails | Check that Ollama is running and `gemma3:1b` is available. The gate result remains deterministic; continue without AI. |
+| AI investigation times out | Gemma 4 can take over 45 seconds for a structured explanation on this laptop. The default timeout is 120 seconds; restart the API after changing `DATASENTINEL_AI_TIMEOUT_SECONDS`. |
+| AI investigation fails | Check that Ollama is running and `gemma4:e2b` is available. The gate result remains deterministic; continue without AI. |
 | A run cannot be found after backend restart | Run state is in memory and does not survive restart. Start a new run. |
 | A stage fails | Inspect the run state/report for the safe error category. The failure path does not authorize downstream work. |
 | Experiment data remains after restart | Experiment records and copied CSVs persist under ignored `reports/`; this is expected. Back up before targeted cleanup. |
 | Production use is requested | Do not expose this local demo API publicly. Authentication, durable shared state, production downstream integration, and retention controls are absent. |
-

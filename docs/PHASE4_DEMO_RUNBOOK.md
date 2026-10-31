@@ -13,7 +13,8 @@ review approvals, and durable incident history are not implemented.
 - Python 3.11 or newer
 - Node.js 20 and npm
 - Dependencies installed from `requirements.txt` and `frontend/package-lock.json`
-- Optional: Ollama with `gemma3:1b`; the deterministic gate does not require it
+- Optional: Ollama with `gemma4:e2b` (Gemma 4 E2B); the deterministic gate
+  does not require it
 
 ## Start the application (Windows PowerShell)
 

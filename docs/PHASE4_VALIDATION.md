@@ -12,8 +12,8 @@ Validation was performed against the current local checkout.
 | Deterministic fixture matrix | Pass | All seven fixture pairs matched expected decisions and finding types in the real analysis/gate runner. |
 | GitHub Actions | Local configuration only | The configured test/build commands passed locally. No hosted Actions run is asserted here. |
 | Jenkins | Not run | Jenkins CLI/service was unavailable locally. |
-| Demo preflight | Core checks pass; optional Jenkins warning | Temporary generic CSV fixtures produced `ALLOW`, `REVIEW_REQUIRED`, and `BLOCK`; report, LangGraph, and schema-validated reasoning checks passed. Jenkins connectivity was not configured; no remote job was executed. |
-| Ollama/Gemma | Pass | Local `gemma3:1b` was installed; actual inference succeeded (724.12 ms in the latest preflight), and Gemma returned a schema-valid explanation for a synthetic detector finding. |
+| Demo preflight | Core checks pass; optional AI/Jenkins warnings | Temporary generic CSV fixtures produced `ALLOW`, `REVIEW_REQUIRED`, and `BLOCK`; report and LangGraph checks passed. An earlier run exceeded the 30-second health and 45-second reasoning timeouts. Jenkins connectivity was not configured; no remote job was executed. |
+| Ollama/Gemma | Installed; structured inference verified | Local `gemma4:e2b` health check returned `AVAILABLE`; a synthetic structured reasoning request completed successfully in 77.47 seconds with a 120-second timeout. |
 
 ## Fixture matrix observed
 

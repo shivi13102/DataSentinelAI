@@ -15,7 +15,8 @@ with generic column names.
   categorical-drift detectors, followed by a fail-closed protection gate.
 - Monitored pipeline runs with structured events and SSE, plus controlled
   Experiment Lab cases.
-- Local Ollama reasoning using the configured `gemma3:1b` model by default.
+- Local Ollama reasoning using the configured `gemma4:e2b` (Gemma 4 E2B)
+  model by default.
   `DATASENTINEL_AI_MODEL`, `DATASENTINEL_OLLAMA_URL`, and
   `DATASENTINEL_AI_TIMEOUT_SECONDS` can configure it.
 - The upload-report LangGraph now evaluates the deterministic gate before it
@@ -89,11 +90,12 @@ workflow file as proof of a remote CI run.
 - Frontend lint: passed with three warnings (Fast Refresh export in `App.tsx`
   and two existing `useMemo` dependency warnings in `AnomalyExplorer.tsx`).
 - Demo preflight: all core checks passed; overall `READY WITH WARNINGS` because
-  `DATASENTINEL_JENKINS_URL` is not configured. The latest run also passed
-  schema-validated AI reasoning against one synthetic detector finding.
-- Local AI: actual Ollama inference `AVAILABLE`, configured model
-  `gemma3:1b`; latest health inference completed in 724.12 ms. A separate
-  synthetic-finding reasoning check returned a schema-valid explanation.
+  the earlier Gemma 4 checks exceeded their 30-second health and 45-second
+  reasoning timeouts, and `DATASENTINEL_JENKINS_URL` is not configured. The
+  default AI timeout is now 120 seconds.
+- Local AI: `gemma4:e2b` is installed and the health check reports `AVAILABLE`.
+  A synthetic structured explanation completed successfully in 77.47 seconds
+  with a 120-second timeout.
 - PowerShell syntax: startup and shutdown scripts parsed successfully.
   Startup was smoke-tested with pre-existing localhost services and left both
   untouched. The owned-process launch/stop path was not exercised because

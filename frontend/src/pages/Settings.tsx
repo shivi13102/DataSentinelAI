@@ -241,7 +241,7 @@ export function SettingsPage() {
               </span>
               <div className="flex items-center gap-2">
                 <p className="text-sm font-semibold text-[#22D3EE] font-mono">
-                  {healthData?.configured_ai_model ?? 'gemma3:1b'}
+                  {healthData?.configured_ai_model ?? 'gemma4:e2b'}
                 </p>
                 <Badge
                   variant={

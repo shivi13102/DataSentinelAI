@@ -24,7 +24,7 @@ A pipeline can execute with exit code `0` (Success) while the **data itself is s
 - **Duplication Spikes:** Ingestion retry loops replay records without deduplication, inflating metric volumes.
 - **Category Drift:** Unhandled enum tokens (e.g., `'Unknown'`) bypass upstream validation, contaminating downstream segmentation.
 
-**DataSentinel AI** provides data observability by comparing uploaded datasets against trusted reference baselines. It pairs **deterministic detectors** (Kolmogorov-Smirnov, Chi-square, and Total Variation Distance) with an optional **LangGraph-orchestrated reasoning agent powered by Gemma 3 1B**, enforcing an **authoritative, fail-closed Protection Gate** (`ALLOW`, `REVIEW_REQUIRED`, `BLOCK`).
+**DataSentinel AI** provides data observability by comparing uploaded datasets against trusted reference baselines. It pairs **deterministic detectors** (Kolmogorov-Smirnov, Chi-square, and Total Variation Distance) with an optional **LangGraph-orchestrated reasoning agent powered by Gemma 4 E2B**, enforcing an **authoritative, fail-closed Protection Gate** (`ALLOW`, `REVIEW_REQUIRED`, `BLOCK`).
 
 ---
 
@@ -34,7 +34,7 @@ A pipeline can execute with exit code `0` (Success) while the **data itself is s
 | :--- | :--- | :--- |
 | **1. Detect** | Python & SciPy | Calculates distribution statistics, p-values, missingness changes, duplicate-row rates, categorical drift, and schema differences. The LLM does not calculate measured values. |
 | **2. Investigate** | Python API and workflow | The monitored-run path explicitly sequences analysis, gate evaluation, optional AI reasoning, and conditional downstream execution. The separate report workflow also uses LangGraph. |
-| **3. Explain** | Gemma 3 1B (via Ollama) | Analyzes measured facts to formulate unverified root-cause hypotheses, assess business impacts, and recommend verification checklists in plain language. |
+| **3. Explain** | Gemma 4 E2B (via Ollama) | Analyzes measured facts to formulate unverified root-cause hypotheses, assess business impacts, and recommend verification checklists in plain language. |
 | **4. Protect** | Deterministic Safety Gate | Authoritative gate evaluates finding severities. If critical risks are detected, it issues a **BLOCK** decision that **cannot be overridden by the LLM**. |
 
 ---
@@ -354,7 +354,7 @@ DataSentinelAI/
 │   └── stop_demo.ps1                        # Stop only processes started by demo
 ├── src/
 │   ├── agents/
-│   │   └── reasoning_agent.py               # Gemma 3 1B structured Ollama client
+│   │   └── reasoning_agent.py               # Gemma 4 E2B structured Ollama client
 │   ├── experiments/
 │   │   ├── lab.py                           # Deterministic injection and recovery
 │   │   └── store.py                         # SQLite metadata and isolated CSV versions
@@ -399,9 +399,9 @@ DataSentinelAI/
 ### Prerequisites
 - Python 3.11+
 - Node.js 20.19+ or 22.12+ & npm (Vite 8 requirement)
-- (Optional) [Ollama](https://ollama.com/) with `gemma3:1b` for local AI reasoning:
+- (Optional) [Ollama](https://ollama.com/) with `gemma4:e2b` for local AI reasoning:
   ```bash
-  ollama pull gemma3:1b
+  ollama pull gemma4:e2b
   ```
   Pull the model before going offline; application startup never downloads it.
 
@@ -529,7 +529,7 @@ python scripts\evaluate_protection.py
 ```
 
 By default, the script attempts one genuine local Ollama inference using
-`gemma3:1b`. Use `--skip-ai` to evaluate deterministic behavior without
+`gemma4:e2b`. Use `--skip-ai` to evaluate deterministic behavior without
 Ollama; AI latency is then unavailable, not zero. The synthetic fixture set
 is small and is not evidence of production performance or readiness. The
 reports include metric definitions and limitations.

@@ -14,10 +14,11 @@
 - [x] Full Python test suite: 177 passed (latest local run).
 - [x] Frontend lint and production build complete. Lint reports three warnings;
   Vite reports a large JavaScript chunk warning.
-- [x] Local readiness preflight passed all core checks, including a real
-  `gemma3:1b` inference check; Jenkins connectivity was an optional warning.
-- [x] Local Ollama/Gemma service and actual `gemma3:1b` inference verified by
-  the preflight on this laptop.
+- [x] Local readiness preflight passed deterministic checks, including the
+  `ALLOW`, `REVIEW_REQUIRED`, and `BLOCK` cases; Jenkins connectivity was not
+  configured.
+- [ ] `gemma4:e2b` is installed locally, but inference exceeded the configured
+  timeouts during the latest preflight and needs separate resolution.
 - [x] Demo runbook, architecture/status note, judge Q&A, and troubleshooting
   guide document implemented behavior and limitations.
 - [x] Presentation included with this documentation package.

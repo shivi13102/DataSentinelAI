@@ -3,7 +3,8 @@
 ## Before the event
 
 1. Install Python and Node dependencies while internet is available.
-2. Install Ollama and manually pull `gemma3:1b` if local AI will be shown.
+2. Install Ollama and manually pull `gemma4:e2b` (Gemma 4 E2B) if local AI
+   will be shown.
 3. Run the preflight and tests:
 
    ```powershell

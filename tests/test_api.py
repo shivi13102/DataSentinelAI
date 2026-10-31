@@ -21,7 +21,7 @@ def client(tmp_path, monkeypatch):
     def unavailable_reasoning(analysis_results):
         return {
             "status": "error",
-            "model": "gemma3:1b",
+            "model": "gemma4:e2b",
             "error": "Ollama is unavailable in this test.",
             "duration_seconds": 0.0,
         }
@@ -205,7 +205,7 @@ def test_ai_health_endpoint_returns_actual_status_without_exposing_configuration
         "check_ai_health",
         lambda: {
             "provider": "ollama",
-            "model": "gemma3:1b",
+            "model": "gemma4:e2b",
             "status": "MODEL_NOT_INSTALLED",
             "ollama_reachable": True,
             "model_installed": False,
