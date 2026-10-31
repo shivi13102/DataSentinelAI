@@ -10,6 +10,7 @@ from langgraph.graph import END, START, StateGraph
 
 from src.analysis_engine import analyze_datasets
 from src.agents.reasoning_agent import explain_findings
+from src.agents.investigation_agent import investigate
 from src.protection_gate import evaluate_pipeline_gate
 
 
@@ -23,6 +24,7 @@ class DataSentinelState(TypedDict, total=False):
     current: pd.DataFrame
     analysis_results: dict[str, Any]
     reasoning_results: dict[str, Any]
+    investigation_results: dict[str, Any]
     protection_results: dict[str, Any]
     final_report: dict[str, Any]
     error: str
@@ -75,7 +77,10 @@ def generate_reasoning(state: DataSentinelState) -> dict[str, Any]:
         }
 
     try:
-        reasoning_results = explain_findings(analysis_results)
+        reasoning_results = explain_findings({
+            **analysis_results,
+            "investigation": state.get("investigation_results"),
+        })
 
         return {
             "reasoning_results": reasoning_results,
@@ -94,6 +99,19 @@ def generate_reasoning(state: DataSentinelState) -> dict[str, Any]:
                 ),
             }
         }
+
+
+def run_investigation(state: DataSentinelState) -> dict[str, Any]:
+    analysis = state.get("analysis_results")
+    if not isinstance(analysis, dict):
+        return {"investigation_results": {"status": "skipped", "tool_calls": []}}
+    try:
+        updated, audit = investigate(state["baseline"], state["current"], analysis)
+    except Exception as exc:
+        logger.error("Agentic investigation failed (%s).", type(exc).__name__)
+        updated = {**analysis, "overall_status": "incomplete"}
+        audit = {"status": "error", "tool_calls": [], "error": f"Investigation failed ({type(exc).__name__})."}
+    return {"analysis_results": updated, "investigation_results": audit}
 
 
 def protect_pipeline(state: DataSentinelState) -> dict[str, Any]:
@@ -173,6 +191,7 @@ def build_report(state: DataSentinelState) -> dict[str, Any]:
             "error": "No AI reasoning results were produced.",
         },
     )
+    investigation_results = state.get("investigation_results", {"status": "disabled", "tool_calls": []})
 
     protection_results = state.get(
         "protection_results",
@@ -204,6 +223,7 @@ def build_report(state: DataSentinelState) -> dict[str, Any]:
         ),
         "analysis": analysis_results,
         "ai_reasoning": reasoning_results,
+        "investigation": investigation_results,
         "protection": protection_results,
         "human_review_required": protection_results.get(
             "human_review_required", True
@@ -222,12 +242,14 @@ def build_workflow():
     graph = StateGraph(DataSentinelState)
 
     graph.add_node("analyze_data", analyze_data)
+    graph.add_node("run_investigation", run_investigation)
     graph.add_node("generate_reasoning", generate_reasoning)
     graph.add_node("protect_pipeline", protect_pipeline)
     graph.add_node("build_report", build_report)
 
     graph.add_edge(START, "analyze_data")
-    graph.add_edge("analyze_data", "protect_pipeline")
+    graph.add_edge("analyze_data", "run_investigation")
+    graph.add_edge("run_investigation", "protect_pipeline")
     graph.add_edge("protect_pipeline", "generate_reasoning")
     graph.add_edge("generate_reasoning", "build_report")
     graph.add_edge("build_report", END)

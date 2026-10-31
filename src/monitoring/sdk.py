@@ -198,6 +198,17 @@ class PipelineRun:
             message=f"Protection gate returned {decision}.",
         )
 
+    def publish_investigation(self, investigation: dict[str, Any]) -> None:
+        if self._active_stage_id != "agentic_investigation":
+            raise RuntimeError("Investigation must be published in its stage.")
+        self._emit(
+            "investigation_updated",
+            stage_id="agentic_investigation",
+            stage_name="Agentic Investigation",
+            investigation=investigation,
+            message="Investigation audit recorded.",
+        )
+
     def skip_downstream(self, decision: str) -> None:
         if decision not in {"REVIEW_REQUIRED", "BLOCK"}:
             raise ValueError("Only a restrictive decision can block downstream.")

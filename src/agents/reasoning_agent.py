@@ -153,6 +153,7 @@ def _build_prompt(analysis_results: dict[str, Any]) -> str:
     evidence = {
         "overall_status": analysis_results.get("overall_status"),
         "total_findings": len(findings),
+        "deterministic_follow_up": analysis_results.get("investigation"),
         "findings": [
             {
                 "finding_number": index,

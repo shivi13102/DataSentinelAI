@@ -15,6 +15,7 @@ Configuration is read from environment variables at Python process startup:
 | `DATASENTINEL_AI_MODEL` | `gemma4:e2b` | Exact installed Ollama model tag. |
 | `DATASENTINEL_OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama base URL. |
 | `DATASENTINEL_AI_TIMEOUT_SECONDS` | `120` | Bounded reasoning and health-check timeout; invalid non-integer settings fail at startup. |
+| `DATASENTINEL_AGENTIC_INVESTIGATION` | `false` | Set to `true` to let the local model select up to two deterministic follow-up checks before the gate. Selection has a fixed 30-second timeout. Failures are recorded and block downstream processing. |
 
 Set values before starting Uvicorn, for example:
 
@@ -56,9 +57,10 @@ does not claim the model is available.
 
 ## Failure behavior and troubleshooting
 
-- If Ollama is unavailable or model inference times out/fails, deterministic
-  analysis and the protection gate continue. The AI error is displayed without
-  fabricated explanation.
+- If optional post-gate explanation fails, deterministic analysis and the
+  protection gate continue. When agentic investigation is enabled, selection
+  or tool failure marks the analysis incomplete and the gate blocks. The
+  report preserves the error without fabricated measurements.
 - Check service reachability with `Invoke-WebRequest
   http://127.0.0.1:11434/api/tags`.
 - If the configured model is missing, compare the exact configured value with

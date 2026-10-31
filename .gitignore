@@ -83,3 +83,5 @@ ollama_models/
 # Local datasets
 # Keep sample CSV files tracked.
 # Add private or large dataset paths below if needed.
+
+Project.md

@@ -33,7 +33,7 @@ A pipeline can execute with exit code `0` (Success) while the **data itself is s
 | Stage | Mechanism | Responsibility |
 | :--- | :--- | :--- |
 | **1. Detect** | Python & SciPy | Calculates distribution statistics, p-values, missingness changes, duplicate-row rates, categorical drift, and schema differences. The LLM does not calculate measured values. |
-| **2. Investigate** | Python API and workflow | The monitored-run path explicitly sequences analysis, gate evaluation, optional AI reasoning, and conditional downstream execution. The separate report workflow also uses LangGraph. |
+| **2. Investigate** | Python API and workflow | Optional model selection of up to two deterministic follow-up checks runs after initial analysis and before the gate in both API paths. Tool inputs, outputs, and errors are saved in the report; monitored runs also expose them in their state and event history. |
 | **3. Explain** | Gemma 4 E2B (via Ollama) | Analyzes measured facts to formulate unverified root-cause hypotheses, assess business impacts, and recommend verification checklists in plain language. |
 | **4. Protect** | Deterministic Safety Gate | Authoritative gate evaluates finding severities. If critical risks are detected, it issues a **BLOCK** decision that **cannot be overridden by the LLM**. |
 
@@ -55,7 +55,7 @@ flowchart TD
     end
 
     subgraph uploadFlow["3. Existing upload-report workflow"]
-        legacyGraph["LangGraph report workflow<br/>analyze → protection gate → optional AI reasoning → report"]
+        legacyGraph["LangGraph report workflow<br/>analyze → optional tool investigation → protection gate → optional AI reasoning → report"]
     end
 
     subgraph runtime["4. Monitored analysis and execution layer"]
@@ -559,10 +559,21 @@ UUID `run_id`, monotonic per-run `sequence`, UTC `timestamp`, `event_type`, and
 only the stage, finding, decision, duration, or safe diagnostic fields relevant
 to that event. Event types include `pipeline_started`, `stage_started`,
 `stage_progress`, `stage_completed`, `stage_failed`, `stage_skipped`,
-`finding_detected`, `protection_decided`, `pipeline_completed`,
+`finding_detected`, `investigation_updated`, `protection_decided`, `pipeline_completed`,
 `pipeline_blocked`, and `pipeline_failed`. Payloads are schema-validated and
 limited to 8 KiB. Finding events carry detector metadata and allowlisted
 statistics, not dataset rows or categorical values.
+
+Set `DATASENTINEL_AGENTIC_INVESTIGATION=true` to enable the bounded follow-up
+step (default: disabled). The local model selects at most two tool and column
+pairs from the first 20 eligible initial findings. The only tools rerun the
+existing missing-value and numerical-distribution detectors on one selected
+column with fixed, more sensitive thresholds. The model cannot set thresholds,
+invent findings, or choose arbitrary columns. Valid new findings are included
+in the deterministic gate input. A selection or tool error is recorded in
+`investigation` and marks the analysis incomplete, so the gate blocks
+downstream processing. Ordinary explanation failure after the gate remains
+non-authoritative.
 
 Pipeline states are `queued`, `running`, `completed`, `review_required`,
 `blocked`, and `failed`. `REVIEW_REQUIRED` and `BLOCK` are policy outcomes,

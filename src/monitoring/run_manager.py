@@ -24,6 +24,7 @@ PIPELINE_STAGES = (
     ("numerical_drift_analysis", "Numerical Drift Detection"),
     ("categorical_drift_analysis", "Categorical Drift Detection"),
     ("findings_aggregation", "Findings Aggregation"),
+    ("agentic_investigation", "Agentic Investigation"),
     ("protection_gate", "Deterministic Protection Gate"),
     ("ai_investigation", "AI Investigation"),
     ("downstream_execution", "Simulated Downstream Processing"),
@@ -108,6 +109,7 @@ class RunManager:
                 ],
                 "findings": [],
                 "findings_count": 0,
+                "investigation": {"status": "pending", "tool_calls": []},
                 "protection_decision": None,
                 "downstream_processing_allowed": False,
                 "downstream_executed": False,
@@ -283,6 +285,9 @@ class RunManager:
                 event.downstream_processing_allowed is True
             )
             record["protection_reasons"] = event.reasons or []
+
+        if event_type == "investigation_updated":
+            record["investigation"] = event.investigation
 
         if event_type == "pipeline_completed":
             record["status"] = "completed"

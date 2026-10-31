@@ -16,6 +16,7 @@ EventType = Literal[
     "stage_failed",
     "stage_skipped",
     "finding_detected",
+    "investigation_updated",
     "protection_decided",
     "pipeline_completed",
     "pipeline_failed",
@@ -71,6 +72,7 @@ class PipelineEvent(BaseModel):
     duration_ms: float | None = Field(default=None, ge=0)
     finding_count: int | None = Field(default=None, ge=0)
     finding: SafeFinding | None = None
+    investigation: dict | None = None
     protection_decision: ProtectionDecision | None = None
     downstream_processing_allowed: bool | None = None
     finding_counts: dict[str, int] | None = None

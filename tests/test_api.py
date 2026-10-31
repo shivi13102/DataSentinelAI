@@ -424,6 +424,43 @@ def test_monitored_run_accepts_custom_csv_uploads(client, monkeypatch):
     assert report["dataset_metadata"]["baseline"]["filename"] == "baseline.csv"
 
 
+def test_monitored_investigation_audit_is_in_state_history_and_report(client, monkeypatch):
+    monkeypatch.setenv("DATASENTINEL_AGENTIC_INVESTIGATION", "true")
+    monkeypatch.setattr(
+        "src.agents.investigation_agent.select_tools",
+        lambda _analysis: [{"tool": "inspect_null_spike", "column": "amount"}],
+    )
+    monkeypatch.setattr(
+        "src.monitoring.execution.explain_findings",
+        lambda _analysis: {"status": "skipped"},
+    )
+    baseline = pd.DataFrame({"amount": range(100)})
+    current = baseline.copy()
+    current.loc[:19, "amount"] = float("nan")
+    def csv_bytes(frame):
+        output = StringIO()
+        frame.to_csv(output, index=False)
+        return output.getvalue().encode("utf-8")
+    created = client.post(
+        "/api/pipeline-runs", data={"scenario": "custom"},
+        files={
+            "baseline_file": ("baseline.csv", csv_bytes(baseline), "text/csv"),
+            "current_file": ("current.csv", csv_bytes(current), "text/csv"),
+        },
+    )
+    assert created.status_code == 202
+    run_id = created.json()["run_id"]
+    state = _wait_for_pipeline_run(client, run_id)
+    report = client.get(f"/api/pipeline-runs/{run_id}/report").json()
+    history = client.get(f"/api/pipeline-runs/{run_id}/history").json()["events"]
+    assert state["investigation"]["status"] == "complete"
+    assert state["investigation"]["tool_calls"][0]["output"]
+    assert report["investigation"] == state["investigation"]
+    assert report["monitoring"]["investigation"] == state["investigation"]
+    assert any(event["event_type"] == "investigation_updated" for event in history)
+    assert report["protection"]["decision"] != "ALLOW"
+
+
 def test_monitored_run_rejects_unknown_scenarios_and_run_ids(client):
     unknown_scenario = client.post(
         "/api/pipeline-runs",

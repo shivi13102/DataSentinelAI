@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from src.agents.reasoning_agent import explain_findings
+from src.agents.investigation_agent import investigate
 from src.analysis_engine import analyze_datasets
 from src.graph.workflow import build_report
 from src.monitoring.sdk import PipelineRun
@@ -46,6 +47,18 @@ def execute_monitored_pipeline(
             current=current,
             monitor=run,
         )
+        initial_finding_count = len(analysis["findings"])
+
+        with run.stage("agentic_investigation", "Agentic Investigation"):
+            try:
+                analysis, investigation = investigate(baseline, current, analysis)
+            except Exception as exc:
+                logger.error("Agentic investigation failed for run %s (%s).", run.run_id, type(exc).__name__)
+                analysis = {**analysis, "overall_status": "incomplete"}
+                investigation = {"status": "error", "tool_calls": [], "error": f"Investigation failed ({type(exc).__name__})."}
+            run.publish_investigation(investigation)
+            followups = analysis["findings"][initial_finding_count:]
+            run.publish_findings("agentic_investigation", "Agentic Investigation", followups)
 
         with run.stage("protection_gate", "Deterministic Protection Gate"):
             protection = evaluate_pipeline_gate(analysis)
@@ -53,7 +66,7 @@ def execute_monitored_pipeline(
 
         try:
             with run.stage("ai_investigation", "AI Investigation"):
-                reasoning = explain_findings(analysis)
+                reasoning = explain_findings({**analysis, "investigation": investigation})
         except Exception as exc:
             logger.exception(
                 "AI investigation failed for run %s (%s).",
@@ -94,6 +107,7 @@ def execute_monitored_pipeline(
             {
                 "analysis_results": analysis,
                 "reasoning_results": reasoning,
+                "investigation_results": investigation,
                 "protection_results": protection,
             }
         )["final_report"]
